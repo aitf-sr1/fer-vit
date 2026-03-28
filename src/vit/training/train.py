@@ -105,7 +105,7 @@ def train(config_path: str) -> None:
         device = torch.device('cpu')
     print(f"Using device: {device}")
     
-    train_loader, val_loader, test_loader = create_dataloaders(config)
+    train_loader, val_loader, _ = create_dataloaders(config)
     dataset_info = get_dataset_info(config)
     print(f"Train: {dataset_info['train_size']}, Val: {dataset_info['val_size']}, Test: {dataset_info['test_size']}")
     print(f"Emotions: {dataset_info['emotion_columns']}")
