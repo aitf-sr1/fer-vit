@@ -1,8 +1,13 @@
 model:
   name: vit_b_16
   pretrained: true
-  freeze_backbone: false
+  freeze_backbone: true
   num_emotions: 4
+  gradual_unfreeze:
+    enabled: true
+    unfreeze_at_epoch: 10
+    reduce_lr_on_unfreeze: true
+    lr_reduction_factor: 0.1
 
 data:
   train_csv: data/Cleaned_TrainLabels.csv
