@@ -1,0 +1,178 @@
+import argparse
+from pathlib import Path
+from typing import Dict, Any
+import json
+
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+import numpy as np
+
+from ..data.dataloader import create_dataloaders, get_dataset_info
+from ..models.vit_model import create_model
+from ..training.utils import load_checkpoint, calculate_metrics
+
+
+def evaluate_model(
+    model: nn.Module,
+    test_loader: DataLoader,
+    device: torch.device,
+    emotion_columns: list[str]
+) -> Dict[str, Any]:
+    model.eval()
+    all_predictions = []
+    all_targets = []
+    
+    with torch.no_grad():
+        progress_bar = tqdm(test_loader, desc="Evaluating")
+        for images, labels in progress_bar:
+            images = images.to(device)
+            labels = labels.to(device)
+            
+            outputs = model(images)
+            all_predictions.append(outputs.cpu())
+            all_targets.append(labels.cpu())
+    
+    all_predictions_tensor = torch.cat(all_predictions, dim=0)
+    all_targets_tensor = torch.cat(all_targets, dim=0)
+    
+    metrics = calculate_metrics(all_predictions_tensor, all_targets_tensor)
+    
+    predictions_np = all_predictions_tensor.numpy()
+    targets_np = all_targets_tensor.numpy()
+    
+    results = {
+        'overall_metrics': {
+            'mse': metrics['mse'],
+            'mae': metrics['mae'],
+            'rmse': metrics['rmse']
+        },
+        'per_emotion_metrics': {}
+    }
+    
+    for i, emotion in enumerate(emotion_columns):
+        results['per_emotion_metrics'][emotion] = {
+            'mse': float(metrics['mse_per_emotion'][i]),
+            'mae': float(metrics['mae_per_emotion'][i]),
+            'rmse': float(np.sqrt(metrics['mse_per_emotion'][i])),
+            'correlation': float(metrics['correlation_per_emotion'][i])
+        }
+    
+    results['predictions'] = predictions_np.tolist()
+    results['targets'] = targets_np.tolist()
+    
+    return results
+
+
+def print_results(results: Dict[str, Any]) -> None:
+    print("\n" + "="*60)
+    print("EVALUATION RESULTS")
+    print("="*60)
+    
+    print("\nOverall Metrics:")
+    print(f"  MSE:  {results['overall_metrics']['mse']:.4f}")
+    print(f"  MAE:  {results['overall_metrics']['mae']:.4f}")
+    print(f"  RMSE: {results['overall_metrics']['rmse']:.4f}")
+    
+    print("\nPer-Emotion Metrics:")
+    for emotion, metrics in results['per_emotion_metrics'].items():
+        print(f"\n{emotion}:")
+        print(f"  MSE:         {metrics['mse']:.4f}")
+        print(f"  MAE:         {metrics['mae']:.4f}")
+        print(f"  RMSE:        {metrics['rmse']:.4f}")
+        print(f"  Correlation: {metrics['correlation']:.4f}")
+    
+    print("\n" + "="*60)
+
+
+def save_results(results: Dict[str, Any], output_path: str) -> None:
+    output_file = Path(output_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    results_to_save = {
+        'overall_metrics': results['overall_metrics'],
+        'per_emotion_metrics': results['per_emotion_metrics']
+    }
+    
+    with open(output_file, 'w') as f:
+        json.dump(results_to_save, f, indent=2)
+    
+    print(f"\nResults saved to: {output_file}")
+    
+    predictions_file = output_file.parent / f"{output_file.stem}_predictions.json"
+    predictions_data = {
+        'predictions': results['predictions'],
+        'targets': results['targets']
+    }
+    
+    with open(predictions_file, 'w') as f:
+        json.dump(predictions_data, f, indent=2)
+    
+    print(f"Predictions saved to: {predictions_file}")
+
+
+def evaluate(checkpoint_path: str, config_path: str, output_path: str) -> None:
+    checkpoint = torch.load(checkpoint_path, map_location='cpu')
+    config = checkpoint.get('config')
+    
+    if config is None:
+        import yaml
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        print("Loaded config from file")
+    else:
+        print("Loaded config from checkpoint")
+    
+    device_config = config['device']
+    if device_config['use_cuda'] and torch.cuda.is_available():
+        device = torch.device(f"cuda:{device_config['cuda_device']}")
+    else:
+        device = torch.device('cpu')
+    print(f"Using device: {device}")
+    
+    train_loader, val_loader, test_loader = create_dataloaders(config)
+    dataset_info = get_dataset_info(config)
+    print(f"Test set size: {dataset_info['test_size']}")
+    
+    model = create_model(config)
+    load_checkpoint(checkpoint_path, model)
+    model = model.to(device)
+    print(f"Model loaded from: {checkpoint_path}")
+    
+    results = evaluate_model(model, test_loader, device, dataset_info['emotion_columns'])
+    
+    print_results(results)
+    
+    if output_path:
+        save_results(results, output_path)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description='Evaluate ViT model on test set')
+    parser.add_argument(
+        '--checkpoint',
+        type=str,
+        required=True,
+        help='Path to model checkpoint'
+    )
+    parser.add_argument(
+        '--config',
+        type=str,
+        default='src/vit/config/base_config.yaml',
+        help='Path to config file (used if not in checkpoint)'
+    )
+    parser.add_argument(
+        '--output',
+        type=str,
+        default='outputs/evaluation_results.json',
+        help='Path to save evaluation results'
+    )
+    
+    args = parser.parse_args()
+    
+    evaluate(args.checkpoint, args.config, args.output)
+
+
+if __name__ == '__main__':
+    main()
