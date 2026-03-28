@@ -208,3 +208,6 @@ __marimo__/
 
 # Datasets - only ignore root data/ directory
 /data/
+
+# Outputs 
+/outputs/
