@@ -48,7 +48,7 @@ training:
   num_epochs: 50
   num_workers: 4
   pin_memory: true
-  learning_rate: 0.00005
+  learning_rate: 0.00001
   weight_decay: 0.0001
   gradient_clip: 1.0
 
