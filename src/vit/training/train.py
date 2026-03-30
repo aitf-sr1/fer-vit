@@ -94,10 +94,7 @@ def validate(
     return avg_loss, metrics
 
 
-def train(config_path: str) -> None:
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-    
+def train(config: Dict[str, Any]) -> None:
     device_config = config['device']
     if device_config['use_cuda'] and torch.cuda.is_available():
         device = torch.device(f"cuda:{device_config['cuda_device']}")
@@ -208,14 +205,7 @@ def train(config_path: str) -> None:
     writer.close()
     print(f"\nTraining completed! Best val loss: {best_val_loss:.4f}")
 
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description='Train ViT for emotion detection')
-    parser.add_argument('--config', type=str, default='src/vit/config/base_config.yaml')
-    args = parser.parse_args()
-    
-    train(args.config)
-
-
 if __name__ == '__main__':
-    main()
+    import sys
+    print("Please use scripts/train_vit.py to run training")
+    sys.exit(1)

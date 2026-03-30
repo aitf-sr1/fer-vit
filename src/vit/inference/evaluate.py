@@ -112,17 +112,13 @@ def save_results(results: Dict[str, Any], output_path: str) -> None:
     print(f"Predictions saved to: {predictions_file}")
 
 
-def evaluate(checkpoint_path: str, config_path: str, output_path: str) -> None:
+def evaluate(checkpoint_path: str, config: Dict[str, Any], output_path: str) -> None:
     checkpoint = torch.load(checkpoint_path, map_location='cpu')
-    config = checkpoint.get('config')
+    config_from_checkpoint = checkpoint.get('config')
     
-    if config is None:
-        import yaml
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-        print("Loaded config from file")
-    else:
-        print("Loaded config from checkpoint")
+    if config_from_checkpoint is not None:
+        config = config_from_checkpoint
+        print("Using config from checkpoint")
     
     device_config = config['device']
     if device_config['use_cuda'] and torch.cuda.is_available():
@@ -147,32 +143,7 @@ def evaluate(checkpoint_path: str, config_path: str, output_path: str) -> None:
     if output_path:
         save_results(results, output_path)
 
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description='Evaluate ViT model on test set')
-    parser.add_argument(
-        '--checkpoint',
-        type=str,
-        required=True,
-        help='Path to model checkpoint'
-    )
-    parser.add_argument(
-        '--config',
-        type=str,
-        default='src/vit/config/base_config.yaml',
-        help='Path to config file (used if not in checkpoint)'
-    )
-    parser.add_argument(
-        '--output',
-        type=str,
-        default='outputs/evaluation_results.json',
-        help='Path to save evaluation results'
-    )
-    
-    args = parser.parse_args()
-    
-    evaluate(args.checkpoint, args.config, args.output)
-
-
 if __name__ == '__main__':
-    main()
+    import sys
+    print("Please use scripts/evaluate_vit.py to run evaluation")
+    sys.exit(1)
