@@ -98,6 +98,13 @@ def create_scheduler(optimizer: optim.Optimizer, config: Dict[str, Any]) -> Any:
             patience=config['scheduler']['patience'],
             min_lr=config['scheduler']['min_lr']
         )
+    elif scheduler_type == 'cosine_annealing_warm_restarts':
+        scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            optimizer,
+            T_0=config['scheduler']['T_0'],
+            T_mult=config['scheduler']['T_mult'],
+            eta_min=config['scheduler']['eta_min']
+        )
     elif scheduler_type == 'cosine':
         scheduler = optim.lr_scheduler.CosineAnnealingLR(
             optimizer,
