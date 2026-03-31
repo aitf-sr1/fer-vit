@@ -26,12 +26,11 @@ def evaluate_model(
     
     with torch.no_grad():
         progress_bar = tqdm(test_loader, desc="Evaluating")
-        for images, landmarks, labels in progress_bar:
-            images = images.to(device)
+        for landmarks, labels in progress_bar:
             landmarks = landmarks.to(device)
             labels = labels.to(device)
             
-            outputs = model(images, landmarks)
+            outputs = model(None, landmarks)
             all_predictions.append(outputs.cpu())
             all_targets.append(labels.cpu())
     

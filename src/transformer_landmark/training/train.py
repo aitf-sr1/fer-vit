@@ -33,13 +33,12 @@ def train_one_epoch(
     total_loss = 0.0
     
     progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1} [Train]")
-    for images, landmarks, labels in progress_bar:
-        images = images.to(device)
+    for landmarks, labels in progress_bar:
         landmarks = landmarks.to(device)
         labels = labels.to(device)
         
         optimizer.zero_grad()
-        outputs = model(images, landmarks)
+        outputs = model(None, landmarks)
         loss = criterion(outputs, labels)
         
         loss.backward()
@@ -73,12 +72,11 @@ def validate(
     
     with torch.no_grad():
         progress_bar = tqdm(val_loader, desc=f"Epoch {epoch+1} [Val]")
-        for images, landmarks, labels in progress_bar:
-            images = images.to(device)
+        for landmarks, labels in progress_bar:
             landmarks = landmarks.to(device)
             labels = labels.to(device)
             
-            outputs = model(images, landmarks)
+            outputs = model(None, landmarks)
             loss = criterion(outputs, labels)
             
             total_loss += loss.item()
