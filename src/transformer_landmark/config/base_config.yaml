@@ -1,24 +1,15 @@
 model:
-  name: vit_b_16
-  pretrained: true
-  freeze_backbone: true
+  name: landmark_transformer
   num_emotions: 4
-  gradual_unfreeze:
-    enabled: true
-    unfreeze_at_epoch: 10
-    reduce_lr_on_unfreeze: true
-    lr_reduction_factor: 0.1
-
-landmark_settings:
-  sigma: 10.0
-  bias_strength: 1.0
-  fail_strategy: zeros
-  model_path: model/face_landmarker.task
+  embed_dim: 256
+  num_heads: 8
+  num_layers: 6
+  dropout: 0.1
 
 data:
-  train_csv: data/Cleaned_TrainLabels.csv
-  val_csv: data/Cleaned_ValidationLabels.csv
-  test_csv: data/Cleaned_TestLabels.csv
+  train_csv: data/landmarks/Cleaning_daisee_landmarks/Cleaned_TrainLabels.csv
+  val_csv: data/landmarks/Cleaning_daisee_landmarks/Cleaned_ValidationLabels.csv
+  test_csv: data/landmarks/Cleaning_daisee_landmarks/Cleaned_TestLabels.csv
   train_img_dir: data/Train
   val_img_dir: data/Validation
   test_img_dir: data/Test
@@ -52,9 +43,9 @@ augmentation:
 training:
   batch_size: 32
   num_epochs: 50
-  num_workers: 0
+  num_workers: 4
   pin_memory: true
-  learning_rate: 0.00001
+  learning_rate: 0.0001
   weight_decay: 0.0001
   gradient_clip: 1.0
 
