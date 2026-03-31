@@ -11,32 +11,22 @@ def create_dataloaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, 
     val_transform = get_val_transforms(config)
     test_transform = get_test_transforms(config)
     
-    landmark_settings = config.get('landmark_settings', {})
-    fail_strategy = landmark_settings.get('fail_strategy', 'zeros')
-    model_path = landmark_settings.get('model_path', 'model/face_landmarker.task')
-    
     train_dataset = LandmarkEmotionDataset(
         csv_file=config['data']['train_csv'],
         img_dir=config['data']['train_img_dir'],
-        transform=train_transform,
-        fail_strategy=fail_strategy,
-        model_path=model_path
+        transform=train_transform
     )
     
     val_dataset = LandmarkEmotionDataset(
         csv_file=config['data']['val_csv'],
         img_dir=config['data']['val_img_dir'],
-        transform=val_transform,
-        fail_strategy=fail_strategy,
-        model_path=model_path
+        transform=val_transform
     )
     
     test_dataset = LandmarkEmotionDataset(
         csv_file=config['data']['test_csv'],
         img_dir=config['data']['test_img_dir'],
-        transform=test_transform,
-        fail_strategy=fail_strategy,
-        model_path=model_path
+        transform=test_transform
     )
     
     batch_size = config['training']['batch_size']
@@ -71,45 +61,32 @@ def create_dataloaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, 
 
 
 def get_emotion_statistics(config: Dict[str, Any]) -> pd.DataFrame:
-    landmark_settings = config.get('landmark_settings', {})
     train_dataset = LandmarkEmotionDataset(
         csv_file=config['data']['train_csv'],
         img_dir=config['data']['train_img_dir'],
-        transform=get_train_transforms(config),
-        fail_strategy=landmark_settings.get('fail_strategy', 'zeros'),
-        model_path=landmark_settings.get('model_path', 'model/face_landmarker.task')
+        transform=get_train_transforms(config)
     )
     
     return train_dataset.get_emotion_statistics()
 
 
 def get_dataset_info(config: Dict[str, Any]) -> Dict[str, Any]:
-    landmark_settings = config.get('landmark_settings', {})
-    fail_strategy = landmark_settings.get('fail_strategy', 'zeros')
-    model_path = landmark_settings.get('model_path', 'model/face_landmarker.task')
-    
     train_dataset = LandmarkEmotionDataset(
         csv_file=config['data']['train_csv'],
         img_dir=config['data']['train_img_dir'],
-        transform=get_train_transforms(config),
-        fail_strategy=fail_strategy,
-        model_path=model_path
+        transform=get_train_transforms(config)
     )
     
     val_dataset = LandmarkEmotionDataset(
         csv_file=config['data']['val_csv'],
         img_dir=config['data']['val_img_dir'],
-        transform=get_val_transforms(config),
-        fail_strategy=fail_strategy,
-        model_path=model_path
+        transform=get_val_transforms(config)
     )
     
     test_dataset = LandmarkEmotionDataset(
         csv_file=config['data']['test_csv'],
         img_dir=config['data']['test_img_dir'],
-        transform=get_test_transforms(config),
-        fail_strategy=fail_strategy,
-        model_path=model_path
+        transform=get_test_transforms(config)
     )
     
     return {
