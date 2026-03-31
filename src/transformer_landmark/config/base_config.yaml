@@ -5,6 +5,11 @@ model:
   num_heads: 8
   num_layers: 6
   dropout: 0.1
+  gradual_unfreeze:
+    enabled: false
+    unfreeze_at_epoch: 10
+    reduce_lr_on_unfreeze: true
+    lr_reduction_factor: 0.1
 
 data:
   train_csv: data/landmarks/Cleaning_daisee_landmarks/Cleaned_TrainLabels.csv
