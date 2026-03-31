@@ -1,6 +1,7 @@
 from typing import Dict, Any, Optional
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torchvision.models import vit_b_16, ViT_B_16_Weights
 
 from ..data.face_mesh import create_attention_bias
@@ -8,45 +9,55 @@ from ..data.face_mesh import create_attention_bias
 
 class LandmarkGuidedAttention(nn.Module):
     def __init__(
-        self, original_attention: nn.MultiheadAttention, bias_strength: float = 1.0
+        self, embed_dim: int, num_heads: int, dropout: float = 0.0, bias_strength: float = 1.0
     ):
         super().__init__()
-        self.attention = original_attention
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
         self.bias_strength = bias_strength
-
+        
+        self.qkv = nn.Linear(embed_dim, embed_dim * 3, bias=True)
+        self.proj = nn.Linear(embed_dim, embed_dim)
+        self.dropout = nn.Dropout(dropout)
+        
     def forward(
         self,
-        query: torch.Tensor,
-        key: torch.Tensor,
-        value: torch.Tensor,
+        x: torch.Tensor,
         attention_bias: Optional[torch.Tensor] = None,
-        key_padding_mask: Optional[torch.Tensor] = None,
-        need_weights: bool = True,
-        attn_mask: Optional[torch.Tensor] = None,
-        average_attn_weights: bool = True,
-    ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
-        if attention_bias is not None and attn_mask is None:
-            batch_size = query.shape[1]
-            seq_len = query.shape[0]
-            num_heads = self.attention.num_heads
-
-            bias = attention_bias.unsqueeze(1).expand(-1, seq_len, -1)
-            bias = bias * self.bias_strength
-
-            bias = bias.unsqueeze(1).expand(-1, num_heads, -1, -1)
-            bias = bias.reshape(batch_size * num_heads, seq_len, seq_len)
-
-            attn_mask = bias
-
-        return self.attention(
-            query,
-            key,
-            value,
-            key_padding_mask=key_padding_mask,
-            need_weights=need_weights,
-            attn_mask=attn_mask,
-            average_attn_weights=average_attn_weights,
-        )
+    ) -> torch.Tensor:
+        B, N, C = x.shape
+        
+        # Generate Q, K, V
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv[0], qkv[1], qkv[2]
+        
+        # Compute attention scores
+        attn = (q @ k.transpose(-2, -1)) * (self.head_dim ** -0.5)
+        
+        # Apply landmark bias if provided
+        if attention_bias is not None:
+            # attention_bias shape: [B, 196]
+            # Add class token bias
+            cls_bias = attention_bias.mean(dim=1, keepdim=True)  # [B, 1]
+            bias_with_cls = torch.cat([cls_bias, attention_bias], dim=1)  # [B, 197]
+            
+            # Broadcast to [B, num_heads, N, N]
+            # Each query attends to keys weighted by their landmark importance
+            landmark_bias = bias_with_cls.unsqueeze(1).unsqueeze(2)  # [B, 1, 1, 197]
+            landmark_bias = landmark_bias.expand(B, self.num_heads, N, N)  # [B, num_heads, 197, 197]
+            
+            # Add bias to attention scores
+            attn = attn + landmark_bias * self.bias_strength
+        
+        # Softmax and apply to values
+        attn = attn.softmax(dim=-1)
+        attn = self.dropout(attn)
+        
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = self.proj(x)
+        
+        return x
 
 
 class LandmarkGuidedTransformer(nn.Module):
@@ -82,12 +93,15 @@ class LandmarkGuidedTransformer(nn.Module):
 
     def _inject_landmark_attention(self) -> None:
         for _, layer in enumerate(self.vit.encoder.layers):
+            # Replace PyTorch's MultiheadAttention with our custom implementation
             original_attn = layer.self_attention
-            if not isinstance(original_attn, nn.MultiheadAttention):
-                raise TypeError("Expected layer.self_attention to be nn.MultiheadAttention")
-            layer.self_attention = LandmarkGuidedAttention(
-                original_attn, bias_strength=self.bias_strength
-            )
+            if isinstance(original_attn, nn.MultiheadAttention):
+                layer.self_attention = LandmarkGuidedAttention(
+                    embed_dim=original_attn.embed_dim,
+                    num_heads=original_attn.num_heads,
+                    dropout=0.0,
+                    bias_strength=self.bias_strength
+                )
 
     def freeze_backbone(self) -> None:
         for param in self.vit.conv_proj.parameters():
@@ -119,48 +133,33 @@ class LandmarkGuidedTransformer(nn.Module):
 
         attention_bias = torch.stack(attention_biases).to(device)
 
+        # Patch embedding
         x = self.vit.conv_proj(x)
         x = x.flatten(2).transpose(1, 2)
 
+        # Add class token
         batch_class_token = self.vit.class_token.expand(batch_size, -1, -1)
         x = torch.cat([batch_class_token, x], dim=1)
 
+        # Add positional embedding
         x = self.vit.encoder.pos_embedding + x
         x = self.vit.encoder.dropout(x)
 
-        x = x.transpose(0, 1)
-
+        # Pass through transformer layers with landmark bias
         for layer in self.vit.encoder.layers:
-            ln_1 = layer.ln_1
-            assert isinstance(ln_1, nn.Module)
-            ln_1_out = ln_1(x)
-
-            self_attn = layer.self_attention
-            assert isinstance(self_attn, LandmarkGuidedAttention)
-            attn_out, _ = self_attn(
-                ln_1_out,
-                ln_1_out,
-                ln_1_out,
-                attention_bias=attention_bias,
-                need_weights=False,
-            )
+            # Layer norm + attention with landmark bias
+            ln_out = layer.ln_1(x)
+            attn_out = layer.self_attention(ln_out, attention_bias=attention_bias)
+            x = x + layer.dropout(attn_out)
             
-            dropout = layer.dropout
-            assert isinstance(dropout, nn.Module)
-            x = x + dropout(attn_out)
+            # Layer norm + MLP
+            x = x + layer.mlp(layer.ln_2(x))
 
-            ln_2 = layer.ln_2
-            assert isinstance(ln_2, nn.Module)
-            mlp = layer.mlp
-            assert isinstance(mlp, nn.Module)
-            x = x + mlp(ln_2(x))
-
-        x = x.transpose(0, 1)
-
+        # Final layer norm
         x = self.vit.encoder.ln(x)
 
+        # Classification head
         x = x[:, 0]
-
         x = self.vit.heads(x)
 
         return x
