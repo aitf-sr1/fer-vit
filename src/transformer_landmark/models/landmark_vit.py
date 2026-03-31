@@ -1,61 +1,66 @@
 from typing import Dict, Any
 import torch
 import torch.nn as nn
+from torchvision.models import vit_b_16, ViT_B_16_Weights
 
 
-class LandmarkTransformer(nn.Module):
+class LandmarkViTModel(nn.Module):
     def __init__(self, config: Dict[str, Any]):
         super().__init__()
         self.config = config
-        self.num_emotions = config["model"]["num_emotions"]
+        self.num_emotions = config['model']['num_emotions']
         
-        self.num_landmarks = 468
-        self.landmark_dim = 3
+        if config['model']['pretrained']:
+            weights = ViT_B_16_Weights.IMAGENET1K_V1
+            self.vit = vit_b_16(weights=weights)
+        else:
+            self.vit = vit_b_16(weights=None)
         
-        embed_dim = config["model"].get("embed_dim", 256)
-        num_heads = config["model"].get("num_heads", 8)
-        num_layers = config["model"].get("num_layers", 6)
-        dropout = config["model"].get("dropout", 0.1)
+        original_head = self.vit.heads.head
+        if isinstance(original_head, nn.Linear):
+            in_features = original_head.in_features
+        else:
+            raise TypeError("Expected vit.heads.head to be nn.Linear")
         
-        self.landmark_embedding = nn.Linear(self.landmark_dim, embed_dim)
-        self.pos_embedding = nn.Parameter(torch.randn(1, self.num_landmarks, embed_dim))
-        self.dropout = nn.Dropout(dropout)
+        self.vit.heads.head = nn.Linear(in_features, self.num_emotions)
         
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=embed_dim,
-            nhead=num_heads,
-            dim_feedforward=embed_dim * 4,
-            dropout=dropout,
-            activation='gelu',
-            batch_first=True
-        )
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.landmark_projection = nn.Linear(468 * 3, 224 * 224 * 3)
         
-        self.norm = nn.LayerNorm(embed_dim)
-        self.head = nn.Linear(embed_dim, self.num_emotions)
+        if config['model']['freeze_backbone']:
+            self.freeze_backbone()
+    
+    def freeze_backbone(self) -> None:
+        for param in self.vit.conv_proj.parameters():
+            param.requires_grad = False
+        for param in self.vit.encoder.parameters():
+            param.requires_grad = False
         
-    def forward(self, x: torch.Tensor, landmarks: torch.Tensor) -> torch.Tensor:
-        batch_size = landmarks.shape[0]
+        for param in self.vit.heads.parameters():
+            param.requires_grad = True
+        for param in self.landmark_projection.parameters():
+            param.requires_grad = True
+    
+    def unfreeze_backbone(self) -> None:
+        for param in self.vit.parameters():
+            param.requires_grad = True
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        batch_size = x.shape[0]
         
-        x = self.landmark_embedding(landmarks)
-        x = x + self.pos_embedding
-        x = self.dropout(x)
+        landmarks_flat = x.view(batch_size, -1)
         
-        x = self.transformer(x)
+        projected = self.landmark_projection(landmarks_flat)
         
-        x = self.norm(x)
-        x = x.mean(dim=1)
+        landmark_image = projected.view(batch_size, 3, 224, 224)
         
-        x = self.head(x)
-        
-        return x
+        return self.vit(landmark_image)
     
     def get_num_trainable_params(self) -> int:
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
-
+    
     def get_num_total_params(self) -> int:
         return sum(p.numel() for p in self.parameters())
 
 
-def create_model(config: Dict[str, Any]) -> LandmarkTransformer:
-    return LandmarkTransformer(config)
+def create_model(config: Dict[str, Any]) -> LandmarkViTModel:
+    return LandmarkViTModel(config)

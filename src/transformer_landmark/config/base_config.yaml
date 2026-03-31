@@ -1,12 +1,10 @@
 model:
-  name: landmark_transformer
+  name: vit_b_16
+  pretrained: true
+  freeze_backbone: true
   num_emotions: 4
-  embed_dim: 256
-  num_heads: 8
-  num_layers: 6
-  dropout: 0.1
   gradual_unfreeze:
-    enabled: false
+    enabled: true
     unfreeze_at_epoch: 10
     reduce_lr_on_unfreeze: true
     lr_reduction_factor: 0.1

@@ -38,7 +38,7 @@ def train_one_epoch(
         labels = labels.to(device)
         
         optimizer.zero_grad()
-        outputs = model(None, landmarks)
+        outputs = model(landmarks)
         loss = criterion(outputs, labels)
         
         loss.backward()
@@ -76,7 +76,7 @@ def validate(
             landmarks = landmarks.to(device)
             labels = labels.to(device)
             
-            outputs = model(None, landmarks)
+            outputs = model(landmarks)
             loss = criterion(outputs, labels)
             
             total_loss += loss.item()

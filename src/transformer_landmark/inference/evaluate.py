@@ -30,7 +30,7 @@ def evaluate_model(
             landmarks = landmarks.to(device)
             labels = labels.to(device)
             
-            outputs = model(None, landmarks)
+            outputs = model(landmarks)
             all_predictions.append(outputs.cpu())
             all_targets.append(labels.cpu())
     
