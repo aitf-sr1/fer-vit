@@ -13,6 +13,7 @@ landmark_settings:
   sigma: 10.0
   bias_strength: 1.0
   fail_strategy: zeros
+  model_path: model/face_landmarker.task
 
 data:
   train_csv: data/Cleaned_TrainLabels.csv

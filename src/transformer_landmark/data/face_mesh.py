@@ -1,24 +1,28 @@
-from typing import Optional, Any
+from typing import Optional
 import numpy as np
 import torch
 import cv2
 from PIL import Image
 import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
 
 
 class FaceMeshExtractor:
-    def __init__(self) -> None:
-        face_mesh_solution: Any = mp.solutions.face_mesh  # type: ignore
-        self.face_mesh = face_mesh_solution.FaceMesh(
-            static_image_mode=True,
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
+    def __init__(self, model_path: str = "model/face_landmarker.task") -> None:
+        base_options = python.BaseOptions(model_asset_path=model_path)
+        options = vision.FaceLandmarkerOptions(
+            base_options=base_options,
+            num_faces=1,
+            min_face_detection_confidence=0.5,
+            min_face_presence_confidence=0.5,
+            min_tracking_confidence=0.5,
         )
+        self.landmarker = vision.FaceLandmarker.create_from_options(options)
 
     def __del__(self) -> None:
-        if hasattr(self, "face_mesh"):
-            self.face_mesh.close()
+        if hasattr(self, "landmarker"):
+            self.landmarker.close()
 
     def extract_landmarks(self, image: Image.Image) -> Optional[np.ndarray]:
         image_np = np.array(image)
@@ -28,20 +32,23 @@ class FaceMeshExtractor:
         elif image_np.shape[2] == 4:
             image_np = cv2.cvtColor(image_np, cv2.COLOR_RGBA2RGB)
 
-        results = self.face_mesh.process(image_np)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_np)
+        detection_result = self.landmarker.detect(mp_image)
 
-        if not results.multi_face_landmarks:
+        if not detection_result.face_landmarks:
             return None
 
-        landmarks = results.multi_face_landmarks[0]
+        landmarks = detection_result.face_landmarks[0]
 
-        landmark_array = np.array([[lm.x, lm.y, lm.z] for lm in landmarks.landmark])
+        landmark_array = np.array([[lm.x, lm.y, lm.z] for lm in landmarks])
 
         return landmark_array
 
 
-def extract_face_landmarks(image: Image.Image) -> Optional[np.ndarray]:
-    extractor = FaceMeshExtractor()
+def extract_face_landmarks(
+    image: Image.Image, model_path: str = "model/face_landmarker.task"
+) -> Optional[np.ndarray]:
+    extractor = FaceMeshExtractor(model_path)
     landmarks = extractor.extract_landmarks(image)
     return landmarks
 

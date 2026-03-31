@@ -22,12 +22,13 @@ class LandmarkEmotionDataset(Dataset):
         img_dir: str,
         transform: Callable,
         fail_strategy: str = "zeros",
+        model_path: str = "model/face_landmarker.task",
     ):
         self.data = pd.read_csv(csv_file)
         self.img_dir = Path(img_dir)
         self.transform = transform
         self.fail_strategy = fail_strategy
-        self.extractor = FaceMeshExtractor()
+        self.extractor = FaceMeshExtractor(model_path)
         
         self.failed_extractions = 0
         self.total_extractions = 0
