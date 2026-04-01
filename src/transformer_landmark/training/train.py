@@ -97,6 +97,26 @@ def validate(
 
 
 def train(config: Dict[str, Any]) -> None:
+    load_dotenv()
+    
+    wandb_config = {
+        'mode': os.getenv('WANDB_MODE', 'online'),
+        'entity': os.getenv('WANDB_ENTITY'),
+        'project': os.getenv('WANDB_PROJECT', 'fer-vit'),
+    }
+    
+    if wandb_config['mode'] == 'disabled':
+        print("⚠️  wandb logging is DISABLED (WANDB_MODE=disabled)")
+    
+    run = wandb.init(
+        project=wandb_config['project'],
+        entity=wandb_config['entity'],
+        mode=wandb_config['mode'],
+        config=config,
+        name=config.get('experiment_name', 'landmark-vit'),
+        tags=['landmark', 'vit', 'emotion-detection']
+    )
+    
     device_config = config['device']
     if device_config['use_cuda'] and torch.cuda.is_available():
         device = torch.device(f"cuda:{device_config['cuda_device']}")
@@ -112,6 +132,8 @@ def train(config: Dict[str, Any]) -> None:
     model = create_model(config)
     model = model.to(device)
     print(f"Trainable params: {model.get_num_trainable_params():,}")
+    
+    wandb.watch(model, log='all', log_freq=100)
     
     criterion = nn.MSELoss()
     optimizer = create_optimizer(model, config)
