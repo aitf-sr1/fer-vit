@@ -31,7 +31,7 @@ augmentation:
 
 training:
   batch_size: 64
-  num_epochs: 50
+  num_epochs: 100
   num_workers: 4
   pin_memory: true
   learning_rate: 0.00005
@@ -39,7 +39,10 @@ training:
   gradient_clip: 1.0
 
 loss:
-  type: mse
+  type: combined
+  num_classes: 4
+  mse_weight: 1.0
+  ordinal_weight: 0.5
 
 optimizer:
   type: adam

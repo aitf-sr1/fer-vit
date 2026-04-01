@@ -13,6 +13,7 @@ import wandb
 
 from ..data.dataloader import create_dataloaders, get_dataset_info
 from ..models import create_model
+from .losses import create_loss_function
 from .utils import (
     save_checkpoint,
     create_optimizer,
@@ -139,7 +140,10 @@ def train(config: Dict[str, Any]) -> None:
     
     wandb.watch(model, log='all', log_freq=100)
     
-    criterion = nn.MSELoss()
+    criterion = create_loss_function(config)
+    criterion = criterion.to(device)
+    print(f"Loss function: {config['loss']['type']}")
+    
     optimizer = create_optimizer(model, config)
     scheduler = create_scheduler(optimizer, config)
     
