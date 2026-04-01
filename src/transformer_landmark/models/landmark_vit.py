@@ -24,7 +24,18 @@ class LandmarkViTModel(nn.Module):
         
         self.vit.heads.head = nn.Linear(in_features, self.num_emotions)
         
-        self.landmark_projection = nn.Linear(468 * 3, 224 * 224 * 3)
+        landmark_dim = 468 * 3
+        hidden_dim = 512
+        
+        self.landmark_projection = nn.Sequential(
+            nn.Linear(landmark_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(hidden_dim, 224 * 224 * 3)
+        )
         
         if config['model']['freeze_backbone']:
             self.freeze_backbone()
