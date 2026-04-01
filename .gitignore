@@ -212,5 +212,9 @@ __marimo__/
 # Outputs 
 /outputs/
 
+# wandb
+wandb/
+.wandb/
+
 # Extra Model 
 /model/
