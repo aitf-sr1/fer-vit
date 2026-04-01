@@ -49,6 +49,9 @@ class FacialLandmarkGraphTransformer(nn.Module):
         self.dropout = nn.Dropout(dropout)
         
         self.classifier = nn.Sequential(
+            nn.Linear(d_model, d_model),
+            nn.ReLU(),
+            nn.Dropout(dropout),
             nn.Linear(d_model, d_model // 2),
             nn.ReLU(),
             nn.Dropout(dropout),
