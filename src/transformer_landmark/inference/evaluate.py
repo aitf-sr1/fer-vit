@@ -10,7 +10,7 @@ from tqdm import tqdm
 import numpy as np
 
 from ..data.dataloader import create_dataloaders, get_dataset_info
-from ..models.landmark_vit import create_model
+from ..models import create_model
 from ..training.utils import load_checkpoint, calculate_metrics
 
 
