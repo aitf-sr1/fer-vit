@@ -21,27 +21,15 @@ data:
 
 augmentation:
   train:
-    random_horizontal_flip: true
-    flip_prob: 0.5
-    color_jitter: true
-    brightness: 0.2
-    contrast: 0.2
-    saturation: 0.2
-    hue: 0.1
-    random_rotation: true
-    rotation_degrees: 15
-    random_affine: true
-    affine_degrees: 10
-    affine_scale: [0.9, 1.1]
-    random_perspective: true
-    perspective_distortion: 0.2
-    random_erasing: true
-    erasing_prob: 0.3
-    random_grayscale: true
-    grayscale_prob: 0.1
-  imagenet_norm:
-    mean: [0.485, 0.456, 0.406]
-    std: [0.229, 0.224, 0.225]
+    enabled: true
+    horizontal_flip_prob: 0.5
+    jitter_std: 0.02
+    rotation_degrees: 15.0
+    scale_range: [0.95, 1.05]
+    dropout_prob: 0.1
+    dropout_landmark_prob: 0.05
+  val:
+    enabled: false
 
 training:
   batch_size: 32
