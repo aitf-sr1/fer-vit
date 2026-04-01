@@ -116,3 +116,12 @@ def get_train_transforms(
         dropout_prob=aug_config.get("dropout_prob", 0.1),
         dropout_landmark_prob=aug_config.get("dropout_landmark_prob", 0.05),
     )
+
+
+def get_val_transforms(config: Dict[str, Any]) -> NoAugmentation:
+    return NoAugmentation()
+
+
+def get_test_transforms(config: Dict[str, Any]) -> NoAugmentation:
+    return NoAugmentation()
+

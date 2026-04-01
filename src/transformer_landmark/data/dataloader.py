@@ -13,19 +13,16 @@ def create_dataloaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, 
     
     train_dataset = LandmarkEmotionDataset(
         csv_file=config['data']['train_csv'],
-        img_dir=config['data']['train_img_dir'],
         transform=train_transform
     )
     
     val_dataset = LandmarkEmotionDataset(
         csv_file=config['data']['val_csv'],
-        img_dir=config['data']['val_img_dir'],
         transform=val_transform
     )
     
     test_dataset = LandmarkEmotionDataset(
         csv_file=config['data']['test_csv'],
-        img_dir=config['data']['test_img_dir'],
         transform=test_transform
     )
     
@@ -63,7 +60,6 @@ def create_dataloaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, 
 def get_emotion_statistics(config: Dict[str, Any]) -> pd.DataFrame:
     train_dataset = LandmarkEmotionDataset(
         csv_file=config['data']['train_csv'],
-        img_dir=config['data']['train_img_dir'],
         transform=get_train_transforms(config)
     )
     
@@ -73,19 +69,16 @@ def get_emotion_statistics(config: Dict[str, Any]) -> pd.DataFrame:
 def get_dataset_info(config: Dict[str, Any]) -> Dict[str, Any]:
     train_dataset = LandmarkEmotionDataset(
         csv_file=config['data']['train_csv'],
-        img_dir=config['data']['train_img_dir'],
         transform=get_train_transforms(config)
     )
     
     val_dataset = LandmarkEmotionDataset(
         csv_file=config['data']['val_csv'],
-        img_dir=config['data']['val_img_dir'],
         transform=get_val_transforms(config)
     )
     
     test_dataset = LandmarkEmotionDataset(
         csv_file=config['data']['test_csv'],
-        img_dir=config['data']['test_img_dir'],
         transform=get_test_transforms(config)
     )
     

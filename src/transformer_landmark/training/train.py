@@ -12,7 +12,7 @@ from tqdm import tqdm
 import wandb
 
 from ..data.dataloader import create_dataloaders, get_dataset_info
-from ..models.landmark_vit import create_model
+from ..models import create_model
 from .utils import (
     save_checkpoint,
     create_optimizer,
@@ -108,13 +108,14 @@ def train(config: Dict[str, Any]) -> None:
     if wandb_config['mode'] == 'disabled':
         print("⚠️  wandb logging is DISABLED (WANDB_MODE=disabled)")
     
+    model_name = config['model']['name']
     run = wandb.init(
         project=wandb_config['project'],
         entity=wandb_config['entity'],
         mode=wandb_config['mode'],
         config=config,
-        name=config.get('experiment_name', 'landmark-vit'),
-        tags=['landmark', 'vit', 'emotion-detection']
+        name=config.get('experiment_name', f'landmark-{model_name}'),
+        tags=['landmark', model_name, 'emotion-detection']
     )
     
     device_config = config['device']
@@ -131,7 +132,10 @@ def train(config: Dict[str, Any]) -> None:
     
     model = create_model(config)
     model = model.to(device)
-    print(f"Trainable params: {model.get_num_trainable_params():,}")
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"Model: {config['model']['name']}")
+    print(f"Trainable params: {trainable_params:,} / {total_params:,}")
     
     wandb.watch(model, log='all', log_freq=100)
     
@@ -151,26 +155,6 @@ def train(config: Dict[str, Any]) -> None:
     
     print("\nStarting training...")
     for epoch in range(config['training']['num_epochs']):
-        if config['model']['gradual_unfreeze']['enabled']:
-            unfreeze_epoch = config['model']['gradual_unfreeze']['unfreeze_at_epoch']
-            if epoch == unfreeze_epoch:
-                print(f"\n{'='*60}")
-                print(f"UNFREEZING BACKBONE at epoch {epoch+1}")
-                print(f"{'='*60}")
-                model.unfreeze_backbone()
-                
-                if config['model']['gradual_unfreeze']['reduce_lr_on_unfreeze']:
-                    reduction_factor = config['model']['gradual_unfreeze']['lr_reduction_factor']
-                    old_lr = optimizer.param_groups[0]['lr']
-                    new_lr = old_lr * reduction_factor
-                    for param_group in optimizer.param_groups:
-                        param_group['lr'] = new_lr
-                    print(f"Reduced learning rate: {old_lr:.6f} -> {new_lr:.6f}")
-                
-                trainable_params = model.get_num_trainable_params()
-                print(f"Trainable parameters: {trainable_params:,}")
-                print(f"{'='*60}\n")
-        
         train_loss = train_one_epoch(
             model, train_loader, criterion, optimizer, device, epoch, config
         )
