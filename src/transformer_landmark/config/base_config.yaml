@@ -1,9 +1,9 @@
 model:
   name: graph_transformer
-  d_model: 128
-  num_heads: 4
-  num_layers: 4
-  dropout: 0.3
+  d_model: 256
+  num_heads: 8
+  num_layers: 6
+  dropout: 0.15
   readout: mean
   num_emotions: 4
 
@@ -34,9 +34,9 @@ training:
   num_epochs: 100
   num_workers: 4
   pin_memory: true
-  learning_rate: 0.00005
-  weight_decay: 0.001
-  gradient_clip: 1.0
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+  gradient_clip: 5.0
 
 loss:
   type: combined
@@ -53,12 +53,12 @@ scheduler:
   type: reduce_on_plateau
   mode: min
   factor: 0.5
-  patience: 5
-  min_lr: 1.0e-07
+  patience: 7
+  min_lr: 1.0e-06
 
 early_stopping:
-  patience: 10
-  min_delta: 0.0001
+  patience: 15
+  min_delta: 0.001
 
 output:
   checkpoint_dir: outputs/checkpoints_landmark
