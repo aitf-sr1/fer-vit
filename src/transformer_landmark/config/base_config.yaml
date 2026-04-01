@@ -1,13 +1,11 @@
 model:
-  name: vit_b_16
-  pretrained: true
-  freeze_backbone: true
+  name: graph_transformer
+  d_model: 128
+  num_heads: 4
+  num_layers: 4
+  dropout: 0.1
+  readout: mean
   num_emotions: 4
-  gradual_unfreeze:
-    enabled: true
-    unfreeze_at_epoch: 10
-    reduce_lr_on_unfreeze: true
-    lr_reduction_factor: 0.1
 
 data:
   train_csv: data/landmarks/Cleaned_TrainLabels.csv
@@ -32,11 +30,11 @@ augmentation:
     enabled: false
 
 training:
-  batch_size: 32
+  batch_size: 64
   num_epochs: 50
   num_workers: 4
   pin_memory: true
-  learning_rate: 0.00001
+  learning_rate: 0.0001
   weight_decay: 0.0001
   gradient_clip: 1.0
 
