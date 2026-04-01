@@ -2,12 +2,14 @@ import argparse
 from pathlib import Path
 from typing import Dict, Any
 import yaml
+import os
+from dotenv import load_dotenv
 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+import wandb
 
 from ..data.dataloader import create_dataloaders, get_dataset_info
 from ..models.landmark_vit import create_model
@@ -120,10 +122,6 @@ def train(config: Dict[str, Any]) -> None:
         min_delta=config['early_stopping']['min_delta']
     )
     
-    log_dir = Path(config['output']['log_dir'])
-    log_dir.mkdir(parents=True, exist_ok=True)
-    writer = SummaryWriter(log_dir=str(log_dir))
-    
     checkpoint_dir = Path(config['output']['checkpoint_dir'])
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     
@@ -159,17 +157,22 @@ def train(config: Dict[str, Any]) -> None:
             model, val_loader, criterion, device, epoch
         )
         
-        writer.add_scalar('Loss/train', train_loss, epoch)
-        writer.add_scalar('Loss/val', val_loss, epoch)
-        writer.add_scalar('Metrics/val_mse', val_metrics['mse'], epoch)
-        writer.add_scalar('Metrics/val_mae', val_metrics['mae'], epoch)
-        writer.add_scalar('Metrics/val_rmse', val_metrics['rmse'], epoch)
-        writer.add_scalar('Learning_Rate', optimizer.param_groups[0]['lr'], epoch)
+        metrics_to_log = {
+            'epoch': epoch,
+            'train/loss': train_loss,
+            'val/loss': val_loss,
+            'val/mse': val_metrics['mse'],
+            'val/mae': val_metrics['mae'],
+            'val/rmse': val_metrics['rmse'],
+            'learning_rate': optimizer.param_groups[0]['lr'],
+        }
         
         for i, emotion in enumerate(dataset_info['emotion_columns']):
-            writer.add_scalar(f'MSE_per_emotion/{emotion}', val_metrics['mse_per_emotion'][i], epoch)
-            writer.add_scalar(f'MAE_per_emotion/{emotion}', val_metrics['mae_per_emotion'][i], epoch)
-            writer.add_scalar(f'Correlation/{emotion}', val_metrics['correlation_per_emotion'][i], epoch)
+            metrics_to_log[f'val/mse_{emotion}'] = val_metrics['mse_per_emotion'][i]
+            metrics_to_log[f'val/mae_{emotion}'] = val_metrics['mae_per_emotion'][i]
+            metrics_to_log[f'val/corr_{emotion}'] = val_metrics['correlation_per_emotion'][i]
+        
+        wandb.log(metrics_to_log)
         
         print(f"\nEpoch {epoch+1}/{config['training']['num_epochs']}")
         print(f"Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
@@ -202,7 +205,7 @@ def train(config: Dict[str, Any]) -> None:
             print(f"\nEarly stopping at epoch {epoch+1}")
             break
     
-    writer.close()
+    wandb.finish()
     print(f"\nTraining completed! Best val loss: {best_val_loss:.4f}")
 
 if __name__ == '__main__':
