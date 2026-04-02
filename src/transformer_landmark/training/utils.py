@@ -122,7 +122,14 @@ def create_scheduler(optimizer: optim.Optimizer, config: Dict[str, Any]) -> Any:
     return scheduler
 
 
-def calculate_metrics(predictions: torch.Tensor, targets: torch.Tensor) -> Dict[str, float]:
+def calculate_metrics(predictions: torch.Tensor, targets: torch.Tensor, mode: str = "regression") -> Dict[str, Any]:
+    if mode == "classification":
+        return calculate_classification_metrics(predictions, targets)
+    else:
+        return calculate_regression_metrics(predictions, targets)
+
+
+def calculate_regression_metrics(predictions: torch.Tensor, targets: torch.Tensor) -> Dict[str, Any]:
     predictions_np = predictions.detach().cpu().numpy()
     targets_np = targets.detach().cpu().numpy()
     
@@ -148,6 +155,39 @@ def calculate_metrics(predictions: torch.Tensor, targets: torch.Tensor) -> Dict[
         'mse_per_emotion': mse_per_emotion.tolist(),
         'mae_per_emotion': mae_per_emotion.tolist(),
         'correlation_per_emotion': correlations
+    }
+    
+    return metrics
+
+
+def calculate_classification_metrics(logits: torch.Tensor, targets: torch.Tensor) -> Dict[str, Any]:
+    num_emotions = logits.shape[1]
+    
+    preds = logits.argmax(dim=2)
+    preds_np = preds.detach().cpu().numpy()
+    targets_np = targets.detach().cpu().numpy()
+    
+    accuracy_per_emotion = []
+    for i in range(num_emotions):
+        acc = (preds_np[:, i] == targets_np[:, i]).mean()
+        accuracy_per_emotion.append(float(acc))
+    
+    overall_accuracy = float(np.mean(accuracy_per_emotion))
+    
+    exact_match = (preds_np == targets_np).all(axis=1).mean()
+    
+    mae_per_emotion = []
+    for i in range(num_emotions):
+        mae = np.abs(preds_np[:, i] - targets_np[:, i]).mean()
+        mae_per_emotion.append(float(mae))
+    overall_mae = float(np.mean(mae_per_emotion))
+    
+    metrics = {
+        'accuracy': overall_accuracy,
+        'exact_match': float(exact_match),
+        'mae': overall_mae,
+        'accuracy_per_emotion': accuracy_per_emotion,
+        'mae_per_emotion': mae_per_emotion,
     }
     
     return metrics

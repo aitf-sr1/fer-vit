@@ -1,6 +1,5 @@
-import argparse
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 import json
 
 import torch
@@ -18,7 +17,8 @@ def evaluate_model(
     model: nn.Module,
     test_loader: DataLoader,
     device: torch.device,
-    emotion_columns: list[str]
+    emotion_columns: list[str],
+    mode: str = "classification"
 ) -> Dict[str, Any]:
     model.eval()
     all_predictions = []
@@ -37,51 +37,87 @@ def evaluate_model(
     all_predictions_tensor = torch.cat(all_predictions, dim=0)
     all_targets_tensor = torch.cat(all_targets, dim=0)
     
-    metrics = calculate_metrics(all_predictions_tensor, all_targets_tensor)
+    metrics = calculate_metrics(all_predictions_tensor, all_targets_tensor, mode=mode)
     
-    predictions_np = all_predictions_tensor.numpy()
-    targets_np = all_targets_tensor.numpy()
-    
-    results = {
-        'overall_metrics': {
-            'mse': metrics['mse'],
-            'mae': metrics['mae'],
-            'rmse': metrics['rmse']
-        },
-        'per_emotion_metrics': {}
-    }
-    
-    for i, emotion in enumerate(emotion_columns):
-        results['per_emotion_metrics'][emotion] = {
-            'mse': float(metrics['mse_per_emotion'][i]),
-            'mae': float(metrics['mae_per_emotion'][i]),
-            'rmse': float(np.sqrt(metrics['mse_per_emotion'][i])),
-            'correlation': float(metrics['correlation_per_emotion'][i])
+    if mode == "classification":
+        preds_np = all_predictions_tensor.argmax(dim=2).numpy()
+        targets_np = all_targets_tensor.numpy()
+        
+        results = {
+            'overall_metrics': {
+                'accuracy': metrics['accuracy'],
+                'exact_match': metrics['exact_match'],
+                'mae': metrics['mae']
+            },
+            'per_emotion_metrics': {}
         }
-    
-    results['predictions'] = predictions_np.tolist()
-    results['targets'] = targets_np.tolist()
+        
+        for i, emotion in enumerate(emotion_columns):
+            acc_list = metrics['accuracy_per_emotion']
+            mae_list = metrics['mae_per_emotion']
+            results['per_emotion_metrics'][emotion] = {
+                'accuracy': float(acc_list[i]) if isinstance(acc_list, list) else float(acc_list),
+                'mae': float(mae_list[i]) if isinstance(mae_list, list) else float(mae_list)
+            }
+        
+        results['predictions'] = preds_np.tolist()
+        results['targets'] = targets_np.tolist()
+    else:
+        predictions_np = all_predictions_tensor.numpy()
+        targets_np = all_targets_tensor.numpy()
+        
+        results = {
+            'overall_metrics': {
+                'mse': metrics['mse'],
+                'mae': metrics['mae'],
+                'rmse': metrics['rmse']
+            },
+            'per_emotion_metrics': {}
+        }
+        
+        for i, emotion in enumerate(emotion_columns):
+            mse_per_emotion: List[float] = metrics['mse_per_emotion']
+            mae_per_emotion: List[float] = metrics['mae_per_emotion']
+            corr_per_emotion: List[float] = metrics['correlation_per_emotion']
+            results['per_emotion_metrics'][emotion] = {
+                'mse': float(mse_per_emotion[i]),
+                'mae': float(mae_per_emotion[i]),
+                'rmse': float(np.sqrt(mse_per_emotion[i])),
+                'correlation': float(corr_per_emotion[i])
+            }
+        
+        results['predictions'] = predictions_np.tolist()
+        results['targets'] = targets_np.tolist()
     
     return results
 
 
-def print_results(results: Dict[str, Any]) -> None:
+def print_results(results: Dict[str, Any], mode: str = "classification") -> None:
     print("\n" + "="*60)
     print("EVALUATION RESULTS")
     print("="*60)
     
     print("\nOverall Metrics:")
-    print(f"  MSE:  {results['overall_metrics']['mse']:.4f}")
-    print(f"  MAE:  {results['overall_metrics']['mae']:.4f}")
-    print(f"  RMSE: {results['overall_metrics']['rmse']:.4f}")
+    if mode == "classification":
+        print(f"  Accuracy:    {results['overall_metrics']['accuracy']:.4f}")
+        print(f"  Exact Match: {results['overall_metrics']['exact_match']:.4f}")
+        print(f"  MAE:         {results['overall_metrics']['mae']:.4f}")
+    else:
+        print(f"  MSE:  {results['overall_metrics']['mse']:.4f}")
+        print(f"  MAE:  {results['overall_metrics']['mae']:.4f}")
+        print(f"  RMSE: {results['overall_metrics']['rmse']:.4f}")
     
     print("\nPer-Emotion Metrics:")
-    for emotion, metrics in results['per_emotion_metrics'].items():
+    for emotion, emotion_metrics in results['per_emotion_metrics'].items():
         print(f"\n{emotion}:")
-        print(f"  MSE:         {metrics['mse']:.4f}")
-        print(f"  MAE:         {metrics['mae']:.4f}")
-        print(f"  RMSE:        {metrics['rmse']:.4f}")
-        print(f"  Correlation: {metrics['correlation']:.4f}")
+        if mode == "classification":
+            print(f"  Accuracy: {emotion_metrics['accuracy']:.4f}")
+            print(f"  MAE:      {emotion_metrics['mae']:.4f}")
+        else:
+            print(f"  MSE:         {emotion_metrics['mse']:.4f}")
+            print(f"  MAE:         {emotion_metrics['mae']:.4f}")
+            print(f"  RMSE:        {emotion_metrics['rmse']:.4f}")
+            print(f"  Correlation: {emotion_metrics['correlation']:.4f}")
     
     print("\n" + "="*60)
 
@@ -127,7 +163,7 @@ def evaluate(checkpoint_path: str, config: Dict[str, Any], output_path: str) -> 
         device = torch.device('cpu')
     print(f"Using device: {device}")
     
-    train_loader, val_loader, test_loader = create_dataloaders(config)
+    _, _, test_loader = create_dataloaders(config)
     dataset_info = get_dataset_info(config)
     print(f"Test set size: {dataset_info['test_size']}")
     
@@ -136,9 +172,10 @@ def evaluate(checkpoint_path: str, config: Dict[str, Any], output_path: str) -> 
     model = model.to(device)
     print(f"Model loaded from: {checkpoint_path}")
     
-    results = evaluate_model(model, test_loader, device, dataset_info['emotion_columns'])
+    mode = config.get('model', {}).get('mode', 'classification')
+    results = evaluate_model(model, test_loader, device, dataset_info['emotion_columns'], mode=mode)
     
-    print_results(results)
+    print_results(results, mode=mode)
     
     if output_path:
         save_results(results, output_path)

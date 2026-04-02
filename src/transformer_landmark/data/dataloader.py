@@ -11,19 +11,24 @@ def create_dataloaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, 
     val_transform = get_val_transforms(config)
     test_transform = get_test_transforms(config)
     
+    mode = config.get('model', {}).get('mode', 'classification')
+    
     train_dataset = LandmarkEmotionDataset(
         csv_file=config['data']['train_csv'],
-        transform=train_transform
+        transform=train_transform,
+        mode=mode
     )
     
     val_dataset = LandmarkEmotionDataset(
         csv_file=config['data']['val_csv'],
-        transform=val_transform
+        transform=val_transform,
+        mode=mode
     )
     
     test_dataset = LandmarkEmotionDataset(
         csv_file=config['data']['test_csv'],
-        transform=test_transform
+        transform=test_transform,
+        mode=mode
     )
     
     batch_size = config['training']['batch_size']

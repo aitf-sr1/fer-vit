@@ -1,11 +1,13 @@
 model:
   name: graph_transformer
+  mode: classification
   d_model: 256
   num_heads: 8
   num_layers: 6
   dropout: 0.15
   readout: mean
   num_emotions: 4
+  num_classes: 4
 
 data:
   train_csv: data/landmarks/Cleaned_TrainLabels.csv
@@ -39,10 +41,9 @@ training:
   gradient_clip: 5.0
 
 loss:
-  type: combined
-  num_classes: 4
-  mse_weight: 1.0
-  ordinal_weight: 0.5
+  type: cross_entropy
+  num_emotions: 4
+  label_smoothing: 0.1
 
 optimizer:
   type: adam

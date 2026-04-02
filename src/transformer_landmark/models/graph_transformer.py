@@ -13,6 +13,7 @@ class FacialLandmarkGraphTransformer(nn.Module):
         num_heads: int = 4,
         num_layers: int = 4,
         num_emotions: int = 4,
+        num_classes: int = 4,
         dropout: float = 0.1,
         readout: str = 'mean',
     ):
@@ -22,9 +23,10 @@ class FacialLandmarkGraphTransformer(nn.Module):
         self.num_heads = num_heads
         self.num_layers = num_layers
         self.num_emotions = num_emotions
+        self.num_classes = num_classes
         self.readout = readout
         
-        edge_index, num_edges = get_all_edges()
+        edge_index, _ = get_all_edges()
         self.register_buffer('edge_index', edge_index)
         
         self.node_embedding = nn.Linear(2, d_model)
@@ -48,15 +50,19 @@ class FacialLandmarkGraphTransformer(nn.Module):
         
         self.dropout = nn.Dropout(dropout)
         
-        self.classifier = nn.Sequential(
+        self.shared_fc = nn.Sequential(
             nn.Linear(d_model, d_model),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(d_model, d_model // 2),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(d_model // 2, num_emotions)
         )
+        
+        self.emotion_heads = nn.ModuleList([
+            nn.Linear(d_model // 2, num_classes)
+            for _ in range(num_emotions)
+        ])
         
         self._init_weights()
     
@@ -88,7 +94,9 @@ class FacialLandmarkGraphTransformer(nn.Module):
         edge_index_list = []
         for i in range(batch_size):
             offset = i * NUM_LANDMARKS
-            edge_index_list.append(self.edge_index + offset)
+            edge_idx = torch.as_tensor(self.edge_index)
+            edge_offset = edge_idx + offset
+            edge_index_list.append(edge_offset)
         edge_index = torch.cat(edge_index_list, dim=1)
         
         for transformer, layer_norm in zip(self.transformer_layers, self.layer_norms):
@@ -105,9 +113,11 @@ class FacialLandmarkGraphTransformer(nn.Module):
         else:
             raise ValueError(f"Unknown readout: {self.readout}")
         
-        emotions = self.classifier(x)
+        shared_features = self.shared_fc(x)
         
-        return emotions
+        logits = torch.stack([head(shared_features) for head in self.emotion_heads], dim=1)
+        
+        return logits
     
     def get_num_params(self) -> int:
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
@@ -121,6 +131,7 @@ def create_model(config: Dict[str, Any]) -> FacialLandmarkGraphTransformer:
         num_heads=model_config.get('num_heads', 4),
         num_layers=model_config.get('num_layers', 4),
         num_emotions=model_config.get('num_emotions', 4),
+        num_classes=model_config.get('num_classes', 4),
         dropout=model_config.get('dropout', 0.1),
         readout=model_config.get('readout', 'mean'),
     )

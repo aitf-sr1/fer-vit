@@ -16,9 +16,11 @@ class LandmarkEmotionDataset(Dataset):
         self,
         csv_file: str,
         transform: Optional[Callable] = None,
+        mode: str = "classification",
     ):
         self.data = pd.read_csv(csv_file)
         self.transform = transform
+        self.mode = mode
 
         landmark_cols = [
             f"landmark_{i}_{axis}"
@@ -40,10 +42,16 @@ class LandmarkEmotionDataset(Dataset):
 
         row = self.data.iloc[idx]
 
-        labels = torch.tensor(
-            [row[col] for col in self.EMOTION_COLUMNS],
-            dtype=torch.float32,
-        )
+        if self.mode == "classification":
+            labels = torch.tensor(
+                [int(row[col]) for col in self.EMOTION_COLUMNS],
+                dtype=torch.long,
+            )
+        else:
+            labels = torch.tensor(
+                [row[col] for col in self.EMOTION_COLUMNS],
+                dtype=torch.float32,
+            )
 
         landmark_data = []
         for i in range(self.NUM_LANDMARKS):

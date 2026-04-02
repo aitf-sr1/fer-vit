@@ -1,7 +1,5 @@
-import argparse
 from pathlib import Path
 from typing import Dict, Any
-import yaml
 import os
 from dotenv import load_dotenv
 
@@ -66,7 +64,8 @@ def validate(
     val_loader: DataLoader,
     criterion: nn.Module,
     device: torch.device,
-    epoch: int
+    epoch: int,
+    mode: str = "classification"
 ) -> tuple[float, Dict[str, Any]]:
     model.eval()
     total_loss = 0.0
@@ -92,7 +91,7 @@ def validate(
     
     all_predictions_tensor = torch.cat(all_predictions, dim=0)
     all_targets_tensor = torch.cat(all_targets, dim=0)
-    metrics = calculate_metrics(all_predictions_tensor, all_targets_tensor)
+    metrics = calculate_metrics(all_predictions_tensor, all_targets_tensor, mode=mode)
     
     return avg_loss, metrics
 
@@ -110,7 +109,7 @@ def train(config: Dict[str, Any]) -> None:
         print("⚠️  wandb logging is DISABLED (WANDB_MODE=disabled)")
     
     model_name = config['model']['name']
-    run = wandb.init(
+    wandb.init(
         project=wandb_config['project'],
         entity=wandb_config['entity'],
         mode=wandb_config['mode'],
@@ -158,35 +157,47 @@ def train(config: Dict[str, Any]) -> None:
     best_val_loss = float('inf')
     
     print("\nStarting training...")
+    model_mode = config.get('model', {}).get('mode', 'classification')
+    
     for epoch in range(config['training']['num_epochs']):
         train_loss = train_one_epoch(
             model, train_loader, criterion, optimizer, device, epoch, config
         )
         
         val_loss, val_metrics = validate(
-            model, val_loader, criterion, device, epoch
+            model, val_loader, criterion, device, epoch, mode=model_mode
         )
         
         metrics_to_log = {
             'epoch': epoch,
             'train/loss': train_loss,
             'val/loss': val_loss,
-            'val/mse': val_metrics['mse'],
             'val/mae': val_metrics['mae'],
-            'val/rmse': val_metrics['rmse'],
             'learning_rate': optimizer.param_groups[0]['lr'],
         }
         
-        for i, emotion in enumerate(dataset_info['emotion_columns']):
-            metrics_to_log[f'val/mse_{emotion}'] = val_metrics['mse_per_emotion'][i]
-            metrics_to_log[f'val/mae_{emotion}'] = val_metrics['mae_per_emotion'][i]
-            metrics_to_log[f'val/corr_{emotion}'] = val_metrics['correlation_per_emotion'][i]
+        if model_mode == "classification":
+            metrics_to_log['val/accuracy'] = val_metrics['accuracy']
+            metrics_to_log['val/exact_match'] = val_metrics['exact_match']
+            for i, emotion in enumerate(dataset_info['emotion_columns']):
+                metrics_to_log[f'val/acc_{emotion}'] = val_metrics['accuracy_per_emotion'][i]
+                metrics_to_log[f'val/mae_{emotion}'] = val_metrics['mae_per_emotion'][i]
+        else:
+            metrics_to_log['val/mse'] = val_metrics['mse']
+            metrics_to_log['val/rmse'] = val_metrics['rmse']
+            for i, emotion in enumerate(dataset_info['emotion_columns']):
+                metrics_to_log[f'val/mse_{emotion}'] = val_metrics['mse_per_emotion'][i]
+                metrics_to_log[f'val/mae_{emotion}'] = val_metrics['mae_per_emotion'][i]
+                metrics_to_log[f'val/corr_{emotion}'] = val_metrics['correlation_per_emotion'][i]
         
         wandb.log(metrics_to_log)
         
         print(f"\nEpoch {epoch+1}/{config['training']['num_epochs']}")
         print(f"Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
-        print(f"Val MSE: {val_metrics['mse']:.4f}, MAE: {val_metrics['mae']:.4f}, RMSE: {val_metrics['rmse']:.4f}")
+        if model_mode == "classification":
+            print(f"Val Accuracy: {val_metrics['accuracy']:.4f}, Exact Match: {val_metrics['exact_match']:.4f}, MAE: {val_metrics['mae']:.4f}")
+        else:
+            print(f"Val MSE: {val_metrics['mse']:.4f}, MAE: {val_metrics['mae']:.4f}, RMSE: {val_metrics['rmse']:.4f}")
         
         if config['scheduler']['type'].lower() == 'reduce_on_plateau':
             scheduler.step(val_loss)
