@@ -36,14 +36,19 @@ training:
   num_epochs: 100
   num_workers: 4
   pin_memory: true
-  learning_rate: 0.0001
+  learning_rate: 0.001
   weight_decay: 0.0001
   gradient_clip: 5.0
 
 loss:
   type: cross_entropy
   num_emotions: 4
-  label_smoothing: 0.1
+  label_smoothing: 0.0
+  class_weights:
+    - [0.207, 0.305, 0.433, 3.054]
+    - [3.353, 0.551, 0.045, 0.052]
+    - [0.059, 0.185, 0.490, 3.267]
+    - [0.033, 0.150, 0.679, 3.138]
 
 optimizer:
   type: adam
