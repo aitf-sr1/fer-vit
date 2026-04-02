@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Dict, Any
 import os
+from datetime import datetime
 from dotenv import load_dotenv
 
 import torch
@@ -154,6 +155,23 @@ def train(config: Dict[str, Any]) -> None:
     checkpoint_dir = Path(config['output']['checkpoint_dir'])
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    run_checkpoint_dir = checkpoint_dir / timestamp
+    run_checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    
+    latest_link = checkpoint_dir / 'latest'
+    if latest_link.exists() and latest_link.is_symlink():
+        latest_link.unlink()
+    if latest_link.exists():
+        import shutil
+        shutil.rmtree(latest_link)
+    try:
+        latest_link.symlink_to(timestamp, target_is_directory=True)
+    except OSError:
+        pass
+    
+    print(f"Checkpoint directory: {run_checkpoint_dir}")
+    
     best_val_loss = float('inf')
     
     print("\nStarting training...")
@@ -206,16 +224,16 @@ def train(config: Dict[str, Any]) -> None:
         
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            checkpoint_path = checkpoint_dir / 'best_model.pth'
+            checkpoint_path = run_checkpoint_dir / f'best_model_epoch_{epoch+1}_loss_{val_loss:.4f}.pth'
             save_checkpoint(
                 model, optimizer, scheduler, epoch,
                 train_loss, val_loss, str(checkpoint_path),
                 best_val_loss, config
             )
-            print(f"Saved best model: val_loss={val_loss:.4f}")
+            print(f"Saved best model: epoch={epoch+1}, val_loss={val_loss:.4f}")
         
         if not config['output']['save_best_only'] and (epoch + 1) % config['output']['save_frequency'] == 0:
-            checkpoint_path = checkpoint_dir / f'checkpoint_epoch_{epoch+1}.pth'
+            checkpoint_path = run_checkpoint_dir / f'checkpoint_epoch_{epoch+1}_loss_{val_loss:.4f}.pth'
             save_checkpoint(
                 model, optimizer, scheduler, epoch,
                 train_loss, val_loss, str(checkpoint_path),
