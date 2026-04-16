@@ -18,10 +18,23 @@ if __name__ == "__main__":
                         help='Path to config file')
     parser.add_argument('--output', type=str, default='outputs/evaluation_results.json',
                         help='Path to save evaluation results')
+    parser.add_argument('--attention-maps', action='store_true',
+                        help='Generate attention rollout heatmaps after evaluation')
+    parser.add_argument('--attention-samples', type=int, default=16,
+                        help='Number of test images to visualize (default: 16)')
+    parser.add_argument('--attention-output-dir', type=str, default=None,
+                        help='Directory to save attention maps (default: outputs/attention_maps/)')
     args = parser.parse_args()
     
     with open(args.config, 'r') as f:
         config = yaml.safe_load(f)
     
     print(f"Loading config from: {args.config}")
-    evaluate(args.checkpoint, config, args.output)
+    evaluate(
+        args.checkpoint,
+        config,
+        args.output,
+        attention_maps=args.attention_maps,
+        attention_samples=args.attention_samples,
+        attention_output_dir=args.attention_output_dir,
+    )

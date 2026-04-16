@@ -1,6 +1,6 @@
 import argparse
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import json
 
 import torch
@@ -9,9 +9,10 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 import numpy as np
 
-from ..data.dataloader import create_dataloaders, get_dataset_info
+from ..data.dataloader import create_dataloaders, get_dataset_info, _dataset_class
 from ..models.vit_model import create_model
 from ..training.utils import load_checkpoint, calculate_metrics
+from .attention_rollout import save_attention_maps
 
 
 def evaluate_model(
@@ -118,7 +119,14 @@ def save_results(results: Dict[str, Any], output_path: str) -> None:
     print(f"Predictions saved to: {predictions_file}")
 
 
-def evaluate(checkpoint_path: str, config: Dict[str, Any], output_path: str) -> None:
+def evaluate(
+    checkpoint_path: str,
+    config: Dict[str, Any],
+    output_path: str,
+    attention_maps: bool = False,
+    attention_samples: int = 16,
+    attention_output_dir: Optional[str] = None,
+) -> None:
     checkpoint = torch.load(checkpoint_path, map_location='cpu')
     config_from_checkpoint = checkpoint.get('config')
     
@@ -148,6 +156,27 @@ def evaluate(checkpoint_path: str, config: Dict[str, Any], output_path: str) -> 
     
     if output_path:
         save_results(results, output_path)
+
+    if attention_maps:
+        attn_dir = attention_output_dir or str(Path(output_path).parent / "attention_maps")
+        from ..data.transforms import get_test_transforms
+        transform = get_test_transforms(config)
+        dataset_cls = _dataset_class(config)
+        data_cfg = config['data']
+        test_dataset = dataset_cls(
+            csv_file=data_cfg['test_csv'],
+            img_dir=data_cfg['test_img_dir'],
+            transform=transform,
+        )
+        print(f"\nGenerating {attention_samples} attention maps...")
+        save_attention_maps(
+            model=model,
+            dataset=test_dataset,
+            device=device,
+            emotion_columns=dataset_info['emotion_columns'],
+            output_dir=attn_dir,
+            num_samples=attention_samples,
+        )
 
 if __name__ == '__main__':
     import sys
