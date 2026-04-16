@@ -9,7 +9,7 @@ class ViTEmotionModel(nn.Module):
         super().__init__()
         self.config = config
         self.num_emotions = config['model']['num_emotions']
-        self.num_classes = config['model']['num_classes']
+        self.num_classes = config['model'].get('num_classes', 4)
 
         if config['model']['pretrained']:
             weights = ViT_B_16_Weights.IMAGENET1K_V1
