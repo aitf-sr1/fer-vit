@@ -122,35 +122,69 @@ def create_scheduler(optimizer: optim.Optimizer, config: Dict[str, Any]) -> Any:
     return scheduler
 
 
-def calculate_metrics(predictions: torch.Tensor, targets: torch.Tensor) -> Dict[str, float]:
+def calculate_metrics(
+    predictions: torch.Tensor,
+    targets: torch.Tensor,
+    mode: str = 'classification',
+) -> Dict[str, Any]:
+    if mode == 'classification':
+        return _classification_metrics(predictions, targets)
+    return _regression_metrics(predictions, targets)
+
+
+def _classification_metrics(logits: torch.Tensor, targets: torch.Tensor) -> Dict[str, Any]:
+    # logits: (batch, num_emotions, num_classes), targets: (batch, num_emotions) long
+    preds_np = logits.argmax(dim=2).detach().cpu().numpy()
+    targets_np = targets.detach().cpu().numpy()
+    num_emotions = preds_np.shape[1]
+
+    accuracy_per_emotion = [
+        float((preds_np[:, i] == targets_np[:, i]).mean())
+        for i in range(num_emotions)
+    ]
+    mae_per_emotion = [
+        float(np.abs(preds_np[:, i] - targets_np[:, i]).mean())
+        for i in range(num_emotions)
+    ]
+    overall_accuracy = float(np.mean(accuracy_per_emotion))
+    overall_mae = float(np.mean(mae_per_emotion))
+    exact_match = float((preds_np == targets_np).all(axis=1).mean())
+
+    return {
+        'accuracy': overall_accuracy,
+        'exact_match': exact_match,
+        'mae': overall_mae,
+        'accuracy_per_emotion': accuracy_per_emotion,
+        'mae_per_emotion': mae_per_emotion,
+    }
+
+
+def _regression_metrics(predictions: torch.Tensor, targets: torch.Tensor) -> Dict[str, Any]:
     predictions_np = predictions.detach().cpu().numpy()
     targets_np = targets.detach().cpu().numpy()
-    
+
     mse_per_emotion = np.mean((predictions_np - targets_np) ** 2, axis=0)
     mae_per_emotion = np.mean(np.abs(predictions_np - targets_np), axis=0)
-    
     overall_mse = float(np.mean(mse_per_emotion))
     overall_mae = float(np.mean(mae_per_emotion))
     overall_rmse = float(np.sqrt(overall_mse))
-    
+
     correlations = []
     for i in range(predictions_np.shape[1]):
         if predictions_np[:, i].std() > 0 and targets_np[:, i].std() > 0:
-            corr = np.corrcoef(predictions_np[:, i], targets_np[:, i])[0, 1]
-            correlations.append(corr)
+            corr = float(np.corrcoef(predictions_np[:, i], targets_np[:, i])[0, 1])
         else:
-            correlations.append(0.0)
-    
-    metrics = {
+            corr = 0.0
+        correlations.append(corr)
+
+    return {
         'mse': overall_mse,
         'mae': overall_mae,
         'rmse': overall_rmse,
         'mse_per_emotion': mse_per_emotion.tolist(),
         'mae_per_emotion': mae_per_emotion.tolist(),
-        'correlation_per_emotion': correlations
+        'correlation_per_emotion': correlations,
     }
-    
-    return metrics
 
 
 class EarlyStopping:

@@ -18,50 +18,47 @@ def evaluate_model(
     model: nn.Module,
     test_loader: DataLoader,
     device: torch.device,
-    emotion_columns: list[str]
+    emotion_columns: list[str],
 ) -> Dict[str, Any]:
     model.eval()
     all_predictions = []
     all_targets = []
-    
+
     with torch.no_grad():
         progress_bar = tqdm(test_loader, desc="Evaluating")
         for images, labels in progress_bar:
             images = images.to(device)
             labels = labels.to(device)
-            
+
             outputs = model(images)
             all_predictions.append(outputs.cpu())
             all_targets.append(labels.cpu())
-    
+
     all_predictions_tensor = torch.cat(all_predictions, dim=0)
     all_targets_tensor = torch.cat(all_targets, dim=0)
-    
+
     metrics = calculate_metrics(all_predictions_tensor, all_targets_tensor)
-    
-    predictions_np = all_predictions_tensor.numpy()
+
+    preds_np = all_predictions_tensor.argmax(dim=2).numpy()
     targets_np = all_targets_tensor.numpy()
-    
-    results = {
+
+    results: Dict[str, Any] = {
         'overall_metrics': {
-            'mse': metrics['mse'],
+            'accuracy': metrics['accuracy'],
+            'exact_match': metrics['exact_match'],
             'mae': metrics['mae'],
-            'rmse': metrics['rmse']
         },
-        'per_emotion_metrics': {}
+        'per_emotion_metrics': {},
     }
-    
     for i, emotion in enumerate(emotion_columns):
         results['per_emotion_metrics'][emotion] = {
-            'mse': float(metrics['mse_per_emotion'][i]),
+            'accuracy': float(metrics['accuracy_per_emotion'][i]),
             'mae': float(metrics['mae_per_emotion'][i]),
-            'rmse': float(np.sqrt(metrics['mse_per_emotion'][i])),
-            'correlation': float(metrics['correlation_per_emotion'][i])
         }
-    
-    results['predictions'] = predictions_np.tolist()
+
+    results['predictions'] = preds_np.tolist()
     results['targets'] = targets_np.tolist()
-    
+
     return results
 
 
@@ -71,17 +68,15 @@ def print_results(results: Dict[str, Any]) -> None:
     print("="*60)
     
     print("\nOverall Metrics:")
-    print(f"  MSE:  {results['overall_metrics']['mse']:.4f}")
-    print(f"  MAE:  {results['overall_metrics']['mae']:.4f}")
-    print(f"  RMSE: {results['overall_metrics']['rmse']:.4f}")
+    overall = results['overall_metrics']
+    for key, value in overall.items():
+        print(f"  {key.upper()}: {value:.4f}")
     
     print("\nPer-Emotion Metrics:")
     for emotion, metrics in results['per_emotion_metrics'].items():
         print(f"\n{emotion}:")
-        print(f"  MSE:         {metrics['mse']:.4f}")
-        print(f"  MAE:         {metrics['mae']:.4f}")
-        print(f"  RMSE:        {metrics['rmse']:.4f}")
-        print(f"  Correlation: {metrics['correlation']:.4f}")
+        for key, value in metrics.items():
+            print(f"  {key}: {value:.4f}")
     
     print("\n" + "="*60)
 
@@ -135,7 +130,7 @@ def evaluate(checkpoint_path: str, config: Dict[str, Any], output_path: str) -> 
     load_checkpoint(checkpoint_path, model)
     model = model.to(device)
     print(f"Model loaded from: {checkpoint_path}")
-    
+
     results = evaluate_model(model, test_loader, device, dataset_info['emotion_columns'])
     
     print_results(results)

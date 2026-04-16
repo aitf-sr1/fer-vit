@@ -1,29 +1,38 @@
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Type
 import pandas as pd
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 
-from .datasets import EmotionDataset
+from .datasets import EmotionDataset, BinaryEmotionDataset
 from .transforms import get_train_transforms, get_val_transforms, get_test_transforms
+
+
+def _dataset_class(config: Dict[str, Any]) -> Type[Dataset]:
+    dataset_type = config['data'].get('dataset_type', 'standard')
+    if dataset_type == 'binary':
+        return BinaryEmotionDataset
+    return EmotionDataset
 
 
 def create_dataloaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, DataLoader]:
     train_transform = get_train_transforms(config)
     val_transform = get_val_transforms(config)
     test_transform = get_test_transforms(config)
-    
-    train_dataset = EmotionDataset(
+
+    DatasetClass = _dataset_class(config)
+
+    train_dataset = DatasetClass(
         csv_file=config['data']['train_csv'],
         img_dir=config['data']['train_img_dir'],
         transform=train_transform
     )
     
-    val_dataset = EmotionDataset(
+    val_dataset = DatasetClass(
         csv_file=config['data']['val_csv'],
         img_dir=config['data']['val_img_dir'],
         transform=val_transform
     )
     
-    test_dataset = EmotionDataset(
+    test_dataset = DatasetClass(
         csv_file=config['data']['test_csv'],
         img_dir=config['data']['test_img_dir'],
         transform=test_transform
@@ -61,7 +70,8 @@ def create_dataloaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, 
 
 
 def get_emotion_statistics(config: Dict[str, Any]) -> pd.DataFrame:
-    train_dataset = EmotionDataset(
+    DatasetClass = _dataset_class(config)
+    train_dataset = DatasetClass(
         csv_file=config['data']['train_csv'],
         img_dir=config['data']['train_img_dir'],
         transform=get_train_transforms(config)
@@ -71,19 +81,21 @@ def get_emotion_statistics(config: Dict[str, Any]) -> pd.DataFrame:
 
 
 def get_dataset_info(config: Dict[str, Any]) -> Dict[str, Any]:
-    train_dataset = EmotionDataset(
+    DatasetClass = _dataset_class(config)
+
+    train_dataset = DatasetClass(
         csv_file=config['data']['train_csv'],
         img_dir=config['data']['train_img_dir'],
         transform=get_train_transforms(config)
     )
     
-    val_dataset = EmotionDataset(
+    val_dataset = DatasetClass(
         csv_file=config['data']['val_csv'],
         img_dir=config['data']['val_img_dir'],
         transform=get_val_transforms(config)
     )
     
-    test_dataset = EmotionDataset(
+    test_dataset = DatasetClass(
         csv_file=config['data']['test_csv'],
         img_dir=config['data']['test_img_dir'],
         transform=get_test_transforms(config)

@@ -3,6 +3,7 @@ model:
   pretrained: true
   freeze_backbone: true
   num_emotions: 4
+  num_classes: 4
   gradual_unfreeze:
     enabled: true
     unfreeze_at_epoch: 10
@@ -53,7 +54,8 @@ training:
   gradient_clip: 1.0
 
 loss:
-  type: mse
+  type: cross_entropy
+  label_smoothing: 0.0
 
 optimizer:
   type: adam
