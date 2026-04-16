@@ -1,11 +1,14 @@
 from pathlib import Path
 from typing import Dict, Any
+import os
+from datetime import datetime
+from dotenv import load_dotenv
 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+import wandb
 
 from ..data.dataloader import create_dataloaders, get_dataset_info
 from ..models.vit_model import create_model
@@ -92,6 +95,27 @@ def validate(
 
 
 def train(config: Dict[str, Any]) -> None:
+    load_dotenv()
+
+    wandb_config = {
+        'mode': os.getenv('WANDB_MODE', 'online'),
+        'entity': os.getenv('WANDB_ENTITY'),
+        'project': os.getenv('WANDB_PROJECT', 'fer-vit'),
+    }
+
+    if wandb_config['mode'] == 'disabled':
+        print("wandb logging is DISABLED (WANDB_MODE=disabled)")
+
+    model_name = config['model']['name']
+    wandb.init(
+        project=wandb_config['project'],
+        entity=wandb_config['entity'],
+        mode=wandb_config['mode'],
+        config=config,
+        name=config.get('experiment_name', f'vit-{model_name}'),
+        tags=['vit', model_name, 'emotion-detection']
+    )
+
     device_config = config['device']
     if device_config['use_cuda'] and torch.cuda.is_available():
         device = torch.device(f"cuda:{device_config['cuda_device']}")
@@ -108,6 +132,8 @@ def train(config: Dict[str, Any]) -> None:
     model = model.to(device)
     print(f"Trainable params: {model.get_num_trainable_params():,}")
 
+    wandb.watch(model, log='all', log_freq=100)
+
     criterion = create_loss_function(config)
     optimizer = create_optimizer(model, config)
     scheduler = create_scheduler(optimizer, config)
@@ -117,12 +143,25 @@ def train(config: Dict[str, Any]) -> None:
         min_delta=config['early_stopping']['min_delta']
     )
 
-    log_dir = Path(config['output']['log_dir'])
-    log_dir.mkdir(parents=True, exist_ok=True)
-    writer = SummaryWriter(log_dir=str(log_dir))
-
     checkpoint_dir = Path(config['output']['checkpoint_dir'])
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    run_checkpoint_dir = checkpoint_dir / timestamp
+    run_checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    latest_link = checkpoint_dir / 'latest'
+    if latest_link.exists() and latest_link.is_symlink():
+        latest_link.unlink()
+    if latest_link.exists():
+        import shutil
+        shutil.rmtree(latest_link)
+    try:
+        latest_link.symlink_to(timestamp, target_is_directory=True)
+    except OSError:
+        pass
+
+    print(f"Checkpoint directory: {run_checkpoint_dir}")
 
     best_val_loss = float('inf')
 
@@ -154,15 +193,20 @@ def train(config: Dict[str, Any]) -> None:
             model, val_loader, criterion, device, epoch
         )
 
-        writer.add_scalar('Loss/train', train_loss, epoch)
-        writer.add_scalar('Loss/val', val_loss, epoch)
-        writer.add_scalar('Metrics/val_accuracy', val_metrics['accuracy'], epoch)
-        writer.add_scalar('Metrics/val_exact_match', val_metrics['exact_match'], epoch)
-        writer.add_scalar('Metrics/val_mae', val_metrics['mae'], epoch)
-        writer.add_scalar('Learning_Rate', optimizer.param_groups[0]['lr'], epoch)
+        metrics_to_log = {
+            'epoch': epoch,
+            'train/loss': train_loss,
+            'val/loss': val_loss,
+            'val/accuracy': val_metrics['accuracy'],
+            'val/exact_match': val_metrics['exact_match'],
+            'val/mae': val_metrics['mae'],
+            'learning_rate': optimizer.param_groups[0]['lr'],
+        }
         for i, emotion in enumerate(dataset_info['emotion_columns']):
-            writer.add_scalar(f'Accuracy_per_emotion/{emotion}', val_metrics['accuracy_per_emotion'][i], epoch)
-            writer.add_scalar(f'MAE_per_emotion/{emotion}', val_metrics['mae_per_emotion'][i], epoch)
+            metrics_to_log[f'val/acc_{emotion}'] = val_metrics['accuracy_per_emotion'][i]
+            metrics_to_log[f'val/mae_{emotion}'] = val_metrics['mae_per_emotion'][i]
+
+        wandb.log(metrics_to_log)
 
         print(f"\nEpoch {epoch+1}/{config['training']['num_epochs']}")
         print(f"Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
@@ -175,16 +219,16 @@ def train(config: Dict[str, Any]) -> None:
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            checkpoint_path = checkpoint_dir / 'best_model.pth'
+            checkpoint_path = run_checkpoint_dir / f'best_model_epoch_{epoch+1}_loss_{val_loss:.4f}.pth'
             save_checkpoint(
                 model, optimizer, scheduler, epoch,
                 train_loss, val_loss, str(checkpoint_path),
                 best_val_loss, config
             )
-            print(f"Saved best model: val_loss={val_loss:.4f}")
+            print(f"Saved best model: epoch={epoch+1}, val_loss={val_loss:.4f}")
 
         if not config['output']['save_best_only'] and (epoch + 1) % config['output']['save_frequency'] == 0:
-            checkpoint_path = checkpoint_dir / f'checkpoint_epoch_{epoch+1}.pth'
+            checkpoint_path = run_checkpoint_dir / f'checkpoint_epoch_{epoch+1}_loss_{val_loss:.4f}.pth'
             save_checkpoint(
                 model, optimizer, scheduler, epoch,
                 train_loss, val_loss, str(checkpoint_path),
@@ -195,7 +239,7 @@ def train(config: Dict[str, Any]) -> None:
             print(f"\nEarly stopping at epoch {epoch+1}")
             break
 
-    writer.close()
+    wandb.finish()
     print(f"\nTraining completed! Best val loss: {best_val_loss:.4f}")
 
 if __name__ == '__main__':
