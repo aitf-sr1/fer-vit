@@ -11,13 +11,13 @@ model:
     lr_reduction_factor: 0.1
 
 data:
-  dataset_type: binary
-  train_csv: "data/dataset single frame/new_label/dataset_fix_train.csv"
-  val_csv: "data/dataset single frame/new_label/dataset_fix_val.csv"
-  test_csv: "data/dataset single frame/new_label/dataset_fix_test.csv"
-  train_img_dir: "data/dataset single frame/images/train"
-  val_img_dir: "data/dataset single frame/images/val"
-  test_img_dir: "data/dataset single frame/images/test"
+  dataset_type: standard
+  train_csv: "data/daisee_binary/Cleaned_TrainLabels.csv"
+  val_csv: "data/daisee_binary/Cleaned_ValidationLabels.csv"
+  test_csv: "data/daisee_binary/Cleaned_TestLabels.csv"
+  train_img_dir: "data/daisee_binary/Train"
+  val_img_dir: "data/daisee_binary/Validation"
+  test_img_dir: "data/daisee_binary/Test"
   image_size: 224
   normalize_emotions: false
 
