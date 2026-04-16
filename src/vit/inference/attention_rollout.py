@@ -9,7 +9,8 @@ which can be upsampled and overlaid on the original image.
 """
 
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional
+import types
 
 import cv2
 import matplotlib.pyplot as plt
@@ -30,41 +31,54 @@ class AttentionRollout:
         self.model = model
         self.discard_ratio = discard_ratio
         self._attention_weights: List[torch.Tensor] = []
-        self._hooks: list = []
 
-    def _hook_fn(self, module, input, output):
-        # torchvision MultiheadAttention returns (attn_output, attn_weights)
-        # attn_weights shape: (batch, num_heads, seq_len, seq_len)
-        if isinstance(output, tuple) and len(output) == 2:
-            self._attention_weights.append(output[1].detach().cpu())
+    def _patch_encoder_blocks(self):
+        """
+        Temporarily replace each EncoderBlock.forward to call
+        self_attention with need_weights=True and store the weights.
+        torchvision hardcodes need_weights=False, so hooks alone cannot
+        capture the attention tensor.
+        """
+        storage = self._attention_weights
 
-    def _register_hooks(self):
-        for layer in self.model.vit.encoder.layers:
-            hook = layer.self_attention.register_forward_hook(self._hook_fn)
-            self._hooks.append(hook)
+        def _patched_forward(self_block, input: torch.Tensor) -> torch.Tensor:
+            x = self_block.ln_1(input)
+            attn_out, attn_weights = self_block.self_attention(
+                x, x, x, need_weights=True, average_attn_weights=True
+            )
+            if attn_weights is not None:
+                storage.append(attn_weights.detach().cpu())
+            x = self_block.dropout(attn_out)
+            x = x + input
+            y = self_block.ln_2(x)
+            y = self_block.mlp(y)
+            return x + y
 
-    def _remove_hooks(self):
-        for hook in self._hooks:
-            hook.remove()
-        self._hooks.clear()
+        self._original_forwards = {}
+        for i, layer in enumerate(self.model.vit.encoder.layers):
+            self._original_forwards[i] = layer.forward
+            layer.forward = types.MethodType(_patched_forward, layer)
+
+    def _restore_encoder_blocks(self):
+        for i, layer in enumerate(self.model.vit.encoder.layers):
+            layer.forward = self._original_forwards[i]
+        self._original_forwards = {}
 
     def _rollout(self) -> torch.Tensor:
-        # Stack: (num_layers, batch, num_heads, seq, seq)
+        # Stack: (num_layers, batch, seq, seq)
         attentions = torch.stack(self._attention_weights, dim=0)
-        # Average over heads: (num_layers, batch, seq, seq)
-        attentions = attentions.mean(dim=2)
 
-        batch_size, seq_len = attentions.shape[1], attentions.shape[2]
+        seq_len = attentions.shape[-1]
+        eye = torch.eye(seq_len).unsqueeze(0).unsqueeze(0)
 
         # Add identity (residual connection) and re-normalize rows
-        eye = torch.eye(seq_len).unsqueeze(0).unsqueeze(0)
         attentions = (attentions + eye) / 2
         attentions = attentions / attentions.sum(dim=-1, keepdim=True)
 
         # Discard lowest attention values to reduce noise
-        flat = attentions.view(-1, seq_len)
-        threshold = flat.quantile(self.discard_ratio, dim=-1, keepdim=True)
-        attentions = torch.where(attentions >= threshold.view(*attentions.shape[:-1], 1),
+        threshold = attentions.flatten(-2).quantile(self.discard_ratio, dim=-1)
+        threshold = threshold.unsqueeze(-1).unsqueeze(-1)
+        attentions = torch.where(attentions >= threshold,
                                  attentions,
                                  torch.zeros_like(attentions))
         attentions = attentions / (attentions.sum(dim=-1, keepdim=True) + 1e-8)
@@ -74,8 +88,8 @@ class AttentionRollout:
         for i in range(1, attentions.shape[0]):
             result = torch.bmm(attentions[i], result)
 
-        # CLS token's attention to all patch tokens: (batch, seq)
-        cls_attn = result[:, 0, 1:]  # exclude CLS-to-CLS
+        # CLS token attention to all patch tokens: exclude CLS-to-CLS
+        cls_attn = result[:, 0, 1:]
         return cls_attn
 
     @torch.no_grad()
@@ -88,27 +102,14 @@ class AttentionRollout:
             rollout map as numpy array of shape (14, 14), values in [0, 1].
         """
         self._attention_weights.clear()
-        self._register_hooks()
-
-        # torchvision MultiheadAttention does not return attn_weights by default;
-        # we need need_weights=True (the default), but batch_first matters.
-        # Patch: temporarily enable need_weights on all attention layers.
-        original_flags = {}
-        for name, module in self.model.vit.encoder.named_modules():
-            if isinstance(module, nn.MultiheadAttention):
-                original_flags[name] = module.training
-        # Forward pass
+        self._patch_encoder_blocks()
         try:
             _ = self.model(image_tensor)
         finally:
-            self._remove_hooks()
+            self._restore_encoder_blocks()
 
         if not self._attention_weights:
-            raise RuntimeError(
-                "No attention weights captured. "
-                "The torchvision MHA may not be returning weights — "
-                "check that need_weights=True (default)."
-            )
+            raise RuntimeError("No attention weights captured after patching encoder blocks.")
 
         cls_attn = self._rollout()  # (1, 196)
         grid_size = int(cls_attn.shape[-1] ** 0.5)  # 14
