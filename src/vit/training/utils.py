@@ -134,6 +134,7 @@ def calculate_metrics(
 
 def _classification_metrics(logits: torch.Tensor, targets: torch.Tensor) -> Dict[str, Any]:
     # logits: (batch, num_emotions, num_classes), targets: (batch, num_emotions) long
+    num_classes = logits.shape[2]
     preds_np = logits.argmax(dim=2).detach().cpu().numpy()
     targets_np = targets.detach().cpu().numpy()
     num_emotions = preds_np.shape[1]
@@ -150,13 +151,37 @@ def _classification_metrics(logits: torch.Tensor, targets: torch.Tensor) -> Dict
     overall_mae = float(np.mean(mae_per_emotion))
     exact_match = float((preds_np == targets_np).all(axis=1).mean())
 
-    return {
+    result: Dict[str, Any] = {
         'accuracy': overall_accuracy,
         'exact_match': exact_match,
         'mae': overall_mae,
         'accuracy_per_emotion': accuracy_per_emotion,
         'mae_per_emotion': mae_per_emotion,
     }
+
+    if num_classes == 2:
+        precision_per_emotion, recall_per_emotion, f1_per_emotion = [], [], []
+        for i in range(num_emotions):
+            p, r = preds_np[:, i], targets_np[:, i]
+            tp = float(((p == 1) & (r == 1)).sum())
+            fp = float(((p == 1) & (r == 0)).sum())
+            fn = float(((p == 0) & (r == 1)).sum())
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+            recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+            f1 = (2 * precision * recall / (precision + recall)
+                  if (precision + recall) > 0 else 0.0)
+            precision_per_emotion.append(precision)
+            recall_per_emotion.append(recall)
+            f1_per_emotion.append(f1)
+
+        result['precision'] = float(np.mean(precision_per_emotion))
+        result['recall'] = float(np.mean(recall_per_emotion))
+        result['f1'] = float(np.mean(f1_per_emotion))
+        result['precision_per_emotion'] = precision_per_emotion
+        result['recall_per_emotion'] = recall_per_emotion
+        result['f1_per_emotion'] = f1_per_emotion
+
+    return result
 
 
 def _regression_metrics(predictions: torch.Tensor, targets: torch.Tensor) -> Dict[str, Any]:

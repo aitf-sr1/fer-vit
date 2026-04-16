@@ -50,11 +50,22 @@ def evaluate_model(
         },
         'per_emotion_metrics': {},
     }
+
+    if 'f1' in metrics:
+        results['overall_metrics']['precision'] = metrics['precision']
+        results['overall_metrics']['recall'] = metrics['recall']
+        results['overall_metrics']['f1'] = metrics['f1']
+
     for i, emotion in enumerate(emotion_columns):
-        results['per_emotion_metrics'][emotion] = {
+        em: Dict[str, float] = {
             'accuracy': float(metrics['accuracy_per_emotion'][i]),
             'mae': float(metrics['mae_per_emotion'][i]),
         }
+        if 'f1_per_emotion' in metrics:
+            em['precision'] = float(metrics['precision_per_emotion'][i])
+            em['recall'] = float(metrics['recall_per_emotion'][i])
+            em['f1'] = float(metrics['f1_per_emotion'][i])
+        results['per_emotion_metrics'][emotion] = em
 
     results['predictions'] = preds_np.tolist()
     results['targets'] = targets_np.tolist()

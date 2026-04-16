@@ -206,6 +206,13 @@ def train(config: Dict[str, Any]) -> None:
             metrics_to_log[f'val/acc_{emotion}'] = val_metrics['accuracy_per_emotion'][i]
             metrics_to_log[f'val/mae_{emotion}'] = val_metrics['mae_per_emotion'][i]
 
+        if 'f1' in val_metrics:
+            metrics_to_log['val/precision'] = val_metrics['precision']
+            metrics_to_log['val/recall'] = val_metrics['recall']
+            metrics_to_log['val/f1'] = val_metrics['f1']
+            for i, emotion in enumerate(dataset_info['emotion_columns']):
+                metrics_to_log[f'val/f1_{emotion}'] = val_metrics['f1_per_emotion'][i]
+
         wandb.log(metrics_to_log)
 
         print(f"\nEpoch {epoch+1}/{config['training']['num_epochs']}")
