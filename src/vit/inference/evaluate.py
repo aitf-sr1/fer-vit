@@ -126,6 +126,7 @@ def evaluate(
     attention_maps: bool = False,
     attention_samples: int = 16,
     attention_output_dir: Optional[str] = None,
+    attention_discard_ratio: float = 0.7,
 ) -> None:
     checkpoint = torch.load(checkpoint_path, map_location='cpu')
     config_from_checkpoint = checkpoint.get('config')
@@ -176,6 +177,7 @@ def evaluate(
             emotion_columns=dataset_info['emotion_columns'],
             output_dir=attn_dir,
             num_samples=attention_samples,
+            discard_ratio=attention_discard_ratio,
         )
 
 if __name__ == '__main__':

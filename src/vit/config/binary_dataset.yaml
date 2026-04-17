@@ -6,7 +6,7 @@ model:
   num_classes: 2
   gradual_unfreeze:
     enabled: true
-    unfreeze_at_epoch: 10
+    unfreeze_at_epoch: 5
     reduce_lr_on_unfreeze: true
     lr_reduction_factor: 0.1
 

@@ -22,6 +22,8 @@ if __name__ == "__main__":
                         help='Generate attention rollout heatmaps after evaluation')
     parser.add_argument('--attention-samples', type=int, default=16,
                         help='Number of test images to visualize (default: 16)')
+    parser.add_argument('--attention-discard-ratio', type=float, default=0.7,
+                        help='Fraction of lowest attention weights to discard (default: 0.7)')
     parser.add_argument('--attention-output-dir', type=str, default=None,
                         help='Directory to save attention maps (default: outputs/attention_maps/)')
     args = parser.parse_args()
@@ -37,4 +39,5 @@ if __name__ == "__main__":
         attention_maps=args.attention_maps,
         attention_samples=args.attention_samples,
         attention_output_dir=args.attention_output_dir,
+        attention_discard_ratio=args.attention_discard_ratio,
     )
