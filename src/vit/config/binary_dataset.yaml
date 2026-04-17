@@ -56,7 +56,8 @@ training:
 
 loss:
   type: cross_entropy
-  label_smoothing: 0.0
+  class_weights: auto
+  label_smoothing: 0.1
 
 optimizer:
   type: adam

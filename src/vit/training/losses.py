@@ -1,3 +1,4 @@
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -30,7 +31,7 @@ class MultiHeadCrossEntropyLoss(nn.Module):
         # targets: (batch, num_emotions) as torch.long
         total_loss = torch.tensor(0.0, device=logits.device)
         for i in range(self.num_emotions):
-            weight = self.class_weights[i] if self.class_weights is not None else None
+            weight = self.class_weights[i].to(logits.device) if self.class_weights is not None else None
             loss = F.cross_entropy(
                 logits[:, i, :],
                 targets[:, i],
@@ -41,9 +42,43 @@ class MultiHeadCrossEntropyLoss(nn.Module):
         return total_loss / self.num_emotions
 
 
+def _compute_class_weights(train_csv: str, emotion_columns: List[str], num_classes: int) -> List[List[float]]:
+    """
+    Compute per-class weights for each emotion from the training CSV.
+
+    For each emotion and each class c:
+        weight[c] = total_samples / (num_classes * count[c])
+
+    This balances the contribution of each class regardless of frequency.
+    """
+    df = pd.read_csv(train_csv)
+    n = len(df)
+    weights = []
+    for col in emotion_columns:
+        col_weights = []
+        for c in range(num_classes):
+            count = (df[col] == c).sum()
+            w = n / (num_classes * count) if count > 0 else 1.0
+            col_weights.append(float(w))
+        weights.append(col_weights)
+        print(f"  {col}: weights={[f'{w:.3f}' for w in col_weights]}")
+    return weights
+
+
+EMOTION_COLUMNS = ["Boredom", "Engagement", "Confusion", "Frustration"]
+
+
 def create_loss_function(config: dict) -> nn.Module:
     loss_config = config.get('loss', {})
     num_emotions = config['model']['num_emotions']
-    class_weights = loss_config.get('class_weights', None)
+    num_classes = config['model'].get('num_classes', 4)
     label_smoothing = loss_config.get('label_smoothing', 0.0)
-    return MultiHeadCrossEntropyLoss(num_emotions, class_weights, label_smoothing)
+
+    raw_weights = loss_config.get('class_weights', None)
+
+    if raw_weights == 'auto':
+        train_csv = config['data']['train_csv']
+        print("Computing class weights from training data...")
+        raw_weights = _compute_class_weights(train_csv, EMOTION_COLUMNS, num_classes)
+
+    return MultiHeadCrossEntropyLoss(num_emotions, raw_weights, label_smoothing)
