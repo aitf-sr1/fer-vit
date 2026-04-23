@@ -81,6 +81,14 @@ def create_optimizer(model: nn.Module, config: Dict[str, Any]) -> optim.Optimize
             eps=config['optimizer']['eps'],
             weight_decay=weight_decay
         )
+    elif optimizer_type == 'rmsprop':
+        optimizer = optim.RMSprop(
+            model.parameters(),
+            lr=lr,
+            momentum=config['optimizer'].get('momentum', 0.0),
+            alpha=config['optimizer'].get('alpha', 0.99),
+            weight_decay=weight_decay,
+        )
     else:
         raise ValueError(f"Unknown optimizer type: {optimizer_type}")
     
@@ -115,6 +123,17 @@ def create_scheduler(optimizer: optim.Optimizer, config: Dict[str, Any]) -> Any:
             optimizer,
             step_size=10,
             gamma=0.1
+        )
+    elif scheduler_type == 'one_cycle':
+        # Requires steps_per_epoch and num_epochs injected by train(); see train.py.
+        steps_per_epoch = config['_one_cycle_steps_per_epoch']
+        num_epochs = config['training']['num_epochs']
+        scheduler = optim.lr_scheduler.OneCycleLR(
+            optimizer,
+            max_lr=config['scheduler']['max_lr'],
+            steps_per_epoch=steps_per_epoch,
+            epochs=num_epochs,
+            pct_start=config['scheduler'].get('pct_start', 0.3),
         )
     else:
         raise ValueError(f"Unknown scheduler type: {scheduler_type}")

@@ -29,10 +29,12 @@ def train_one_epoch(
     optimizer: torch.optim.Optimizer,
     device: torch.device,
     epoch: int,
-    config: Dict[str, Any]
+    config: Dict[str, Any],
+    scheduler=None,
 ) -> float:
     model.train()
     total_loss = 0.0
+    is_one_cycle = config['scheduler']['type'].lower() == 'one_cycle'
 
     progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1} [Train]")
     for images, labels in progress_bar:
@@ -52,6 +54,9 @@ def train_one_epoch(
             )
 
         optimizer.step()
+
+        if is_one_cycle and scheduler is not None:
+            scheduler.step()
 
         total_loss += loss.item()
         progress_bar.set_postfix({'loss': loss.item()})
@@ -107,13 +112,16 @@ def train(config: Dict[str, Any]) -> None:
         print("wandb logging is DISABLED (WANDB_MODE=disabled)")
 
     model_name = config['model']['name']
+    base_tags = ['vit', model_name, 'emotion-detection']
+    extra_tags = config.get('tags', [])
+    all_tags = base_tags + [t for t in extra_tags if t not in base_tags]
     wandb.init(
         project=wandb_config['project'],
         entity=wandb_config['entity'],
         mode=wandb_config['mode'],
         config=config,
         name=config.get('experiment_name', f'vit-{model_name}'),
-        tags=['vit', model_name, 'emotion-detection']
+        tags=all_tags,
     )
 
     device_config = config['device']
@@ -136,6 +144,11 @@ def train(config: Dict[str, Any]) -> None:
 
     criterion = create_loss_function(config)
     optimizer = create_optimizer(model, config)
+
+    # OneCycleLR needs steps_per_epoch at init; inject it before create_scheduler.
+    if config['scheduler']['type'].lower() == 'one_cycle':
+        config['_one_cycle_steps_per_epoch'] = len(train_loader)
+
     scheduler = create_scheduler(optimizer, config)
 
     early_stopping = EarlyStopping(
@@ -187,7 +200,7 @@ def train(config: Dict[str, Any]) -> None:
                 print(f"{'='*60}\n")
 
         train_loss = train_one_epoch(
-            model, train_loader, criterion, optimizer, device, epoch, config
+            model, train_loader, criterion, optimizer, device, epoch, config, scheduler
         )
         val_loss, val_metrics = validate(
             model, val_loader, criterion, device, epoch
@@ -221,7 +234,8 @@ def train(config: Dict[str, Any]) -> None:
 
         if config['scheduler']['type'].lower() == 'reduce_on_plateau':
             scheduler.step(val_loss)
-        else:
+        elif config['scheduler']['type'].lower() != 'one_cycle':
+            # one_cycle steps inside train_one_epoch (per batch); all others step per epoch.
             scheduler.step()
 
         if val_loss < best_val_loss:

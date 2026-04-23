@@ -12,6 +12,12 @@ model:
     reduce_lr_on_unfreeze: true
     lr_reduction_factor: 0.1
 
+experiment_name: "farl-binary-ce"
+tags:
+  - farl
+  - binary
+  - cross-entropy
+
 data:
   dataset_type: standard
   train_csv: "data/daisee_binary/Cleaned_TrainLabels.csv"
