@@ -7,8 +7,8 @@ model:
   num_emotions: 4
   num_classes: 2
   gradual_unfreeze:
-    enabled: false
-    unfreeze_at_epoch: 5
+    enabled: true
+    unfreeze_at_epoch: 10
     reduce_lr_on_unfreeze: true
     lr_reduction_factor: 0.1
 
@@ -58,7 +58,7 @@ augmentation:
 
 training:
   batch_size: 32
-  num_epochs: 50
+  num_epochs: 100
   num_workers: 4
   pin_memory: true
   learning_rate: 0.00001
@@ -80,7 +80,7 @@ scheduler:
   pct_start: 0.3
 
 early_stopping:
-  patience: 10
+  patience: 5
   min_delta: 0.0001
 
 output:
