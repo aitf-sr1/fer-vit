@@ -235,21 +235,20 @@ def train(config: Dict[str, Any]) -> None:
         if config['scheduler']['type'].lower() == 'reduce_on_plateau':
             scheduler.step(val_loss)
         elif config['scheduler']['type'].lower() != 'one_cycle':
-            # one_cycle steps inside train_one_epoch (per batch); all others step per epoch.
             scheduler.step()
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            checkpoint_path = run_checkpoint_dir / f'best_model_epoch_{epoch+1}_loss_{val_loss:.4f}.pth'
+            best_checkpoint_path = run_checkpoint_dir / 'best_model.pth'
             save_checkpoint(
                 model, optimizer, scheduler, epoch,
-                train_loss, val_loss, str(checkpoint_path),
+                train_loss, val_loss, str(best_checkpoint_path),
                 best_val_loss, config
             )
             print(f"Saved best model: epoch={epoch+1}, val_loss={val_loss:.4f}")
 
         if not config['output']['save_best_only'] and (epoch + 1) % config['output']['save_frequency'] == 0:
-            checkpoint_path = run_checkpoint_dir / f'checkpoint_epoch_{epoch+1}_loss_{val_loss:.4f}.pth'
+            checkpoint_path = run_checkpoint_dir / f'checkpoint_epoch_{epoch+1}.pth'
             save_checkpoint(
                 model, optimizer, scheduler, epoch,
                 train_loss, val_loss, str(checkpoint_path),
