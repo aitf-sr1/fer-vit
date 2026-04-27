@@ -14,6 +14,8 @@ class ViTEmotionModel(nn.Module):
 
         if self.backbone_type == 'farl':
             in_features = self._build_farl_backbone(config)
+        elif self.backbone_type == 'davit':
+            in_features = self._build_davit_backbone(config)
         else:
             in_features = self._build_imagenet_backbone(config)
 
@@ -36,7 +38,6 @@ class ViTEmotionModel(nn.Module):
             raise TypeError("Expected vit.heads.head to be nn.Linear")
         in_features = original_head.in_features
 
-        # Replace classification head with identity; emotion heads are separate.
         self.vit.heads.head = nn.Identity()
         return in_features
 
@@ -59,9 +60,21 @@ class ViTEmotionModel(nn.Module):
         self.farl_visual = clip_model.visual
         return clip_model.visual.output_dim  # 512 for ViT-B/16
 
+    def _build_davit_backbone(self, config: Dict[str, Any]) -> int:
+        import timm
+
+        model_name = config['model'].get('davit_variant', 'davit_base')
+        pretrained = config['model'].get('pretrained', True)
+        self.davit = timm.create_model(model_name, pretrained=pretrained, num_classes=0)
+        print(f"DaViT backbone: {model_name}, pretrained={pretrained}")
+        return self.davit.num_features
+
     def freeze_backbone(self) -> None:
         if self.backbone_type == 'farl':
             for param in self.farl_visual.parameters():
+                param.requires_grad = False
+        elif self.backbone_type == 'davit':
+            for param in self.davit.parameters():
                 param.requires_grad = False
         else:
             for param in self.vit.conv_proj.parameters():
@@ -75,6 +88,9 @@ class ViTEmotionModel(nn.Module):
         if self.backbone_type == 'farl':
             for param in self.farl_visual.parameters():
                 param.requires_grad = True
+        elif self.backbone_type == 'davit':
+            for param in self.davit.parameters():
+                param.requires_grad = True
         else:
             for param in self.vit.parameters():
                 param.requires_grad = True
@@ -82,6 +98,8 @@ class ViTEmotionModel(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.backbone_type == 'farl':
             features = self.farl_visual(x)  # (batch, 512)
+        elif self.backbone_type == 'davit':
+            features = self.davit(x)        # (batch, 1024)
         else:
             features = self.vit(x)           # (batch, 768)
 
