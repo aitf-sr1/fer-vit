@@ -31,10 +31,12 @@ def train_one_epoch(
     epoch: int,
     config: Dict[str, Any],
     scheduler=None,
+    scaler=None,
 ) -> float:
     model.train()
     total_loss = 0.0
     is_one_cycle = config['scheduler']['type'].lower() == 'one_cycle'
+    use_amp = scaler is not None
 
     progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1} [Train]")
     for images, labels in progress_bar:
@@ -42,18 +44,23 @@ def train_one_epoch(
         labels = labels.to(device)
 
         optimizer.zero_grad()
-        outputs = model(images)
-        loss = criterion(outputs, labels)
 
-        loss.backward()
+        with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=use_amp):
+            outputs = model(images)
+            loss = criterion(outputs, labels)
 
-        if config['training']['gradient_clip'] > 0:
-            torch.nn.utils.clip_grad_norm_(
-                model.parameters(),
-                config['training']['gradient_clip']
-            )
-
-        optimizer.step()
+        if use_amp:
+            scaler.scale(loss).backward()
+            if config['training']['gradient_clip'] > 0:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), config['training']['gradient_clip'])
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward()
+            if config['training']['gradient_clip'] > 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), config['training']['gradient_clip'])
+            optimizer.step()
 
         if is_one_cycle and scheduler is not None:
             scheduler.step()
@@ -70,6 +77,7 @@ def validate(
     criterion: nn.Module,
     device: torch.device,
     epoch: int,
+    use_amp: bool = False,
 ) -> tuple[float, Dict[str, Any]]:
     model.eval()
     total_loss = 0.0
@@ -82,11 +90,12 @@ def validate(
             images = images.to(device)
             labels = labels.to(device)
 
-            outputs = model(images)
-            loss = criterion(outputs, labels)
+            with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=use_amp):
+                outputs = model(images)
+                loss = criterion(outputs, labels)
 
             total_loss += loss.item()
-            all_predictions.append(outputs)
+            all_predictions.append(outputs.float())
             all_targets.append(labels)
 
             progress_bar.set_postfix({'loss': loss.item()})
@@ -145,6 +154,11 @@ def train(config: Dict[str, Any]) -> None:
     criterion = create_loss_function(config)
     optimizer = create_optimizer(model, config)
 
+    use_amp = config['training'].get('mixed_precision', False) and device.type == 'cuda'
+    scaler = torch.amp.GradScaler() if use_amp else None
+    if use_amp:
+        print("Mixed precision (float16) enabled")
+
     # OneCycleLR needs steps_per_epoch at init; inject it before create_scheduler.
     if config['scheduler']['type'].lower() == 'one_cycle':
         config['_one_cycle_steps_per_epoch'] = len(train_loader)
@@ -200,10 +214,10 @@ def train(config: Dict[str, Any]) -> None:
                 print(f"{'='*60}\n")
 
         train_loss = train_one_epoch(
-            model, train_loader, criterion, optimizer, device, epoch, config, scheduler
+            model, train_loader, criterion, optimizer, device, epoch, config, scheduler, scaler
         )
         val_loss, val_metrics = validate(
-            model, val_loader, criterion, device, epoch
+            model, val_loader, criterion, device, epoch, use_amp
         )
 
         metrics_to_log = {
