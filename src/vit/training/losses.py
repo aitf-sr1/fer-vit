@@ -154,6 +154,10 @@ class MultiHeadAsymmetricLoss(nn.Module):
         self.clip = clip
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        # Force float32: log/sigmoid are numerically unstable in float16 (AMP),
+        # where clamp(min=1e-8) is effectively 0 and log(0) = -inf → NaN.
+        logits = logits.float()
+
         total_loss = torch.tensor(0.0, device=logits.device)
         for i in range(self.num_emotions):
             score = logits[:, i, 1] - logits[:, i, 0]
@@ -165,8 +169,8 @@ class MultiHeadAsymmetricLoss(nn.Module):
             if self.clip > 0:
                 prob_neg = (prob + self.clip).clamp(max=1.0)
 
-            loss_pos = t * torch.log(prob.clamp(min=1e-8))
-            loss_neg = (1 - t) * torch.log((1 - prob_neg).clamp(min=1e-8))
+            loss_pos = t * torch.log(prob.clamp(min=1e-6))
+            loss_neg = (1 - t) * torch.log((1 - prob_neg).clamp(min=1e-6))
 
             # Apply asymmetric focusing
             if self.gamma_pos > 0:

@@ -58,7 +58,8 @@ augmentation:
     std: [0.229, 0.224, 0.225]
 
 training:
-  batch_size: 16
+  batch_size: 32
+  gradient_accumulation_steps: 2
   mixed_precision: true
   num_epochs: 100
   num_workers: 4

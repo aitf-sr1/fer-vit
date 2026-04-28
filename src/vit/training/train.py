@@ -37,36 +37,45 @@ def train_one_epoch(
     total_loss = 0.0
     is_one_cycle = config['scheduler']['type'].lower() == 'one_cycle'
     use_amp = scaler is not None
+    grad_accum_steps = config['training'].get('gradient_accumulation_steps', 1)
 
     progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1} [Train]")
-    for images, labels in progress_bar:
+    for step, (images, labels) in enumerate(progress_bar):
         images = images.to(device)
         labels = labels.to(device)
-
-        optimizer.zero_grad()
 
         with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=use_amp):
             outputs = model(images)
             loss = criterion(outputs, labels)
+            loss = loss / grad_accum_steps
 
         if use_amp:
             scaler.scale(loss).backward()
-            if config['training']['gradient_clip'] > 0:
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), config['training']['gradient_clip'])
-            scaler.step(optimizer)
-            scaler.update()
         else:
             loss.backward()
+
+        # Step optimizer every grad_accum_steps
+        if (step + 1) % grad_accum_steps == 0:
             if config['training']['gradient_clip'] > 0:
+                if use_amp:
+                    scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), config['training']['gradient_clip'])
-            optimizer.step()
 
-        if is_one_cycle and scheduler is not None:
-            scheduler.step()
+            if use_amp:
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                optimizer.step()
 
-        total_loss += loss.item()
-        progress_bar.set_postfix({'loss': loss.item()})
+            optimizer.zero_grad()
+
+            if is_one_cycle and scheduler is not None:
+                scheduler.step()
+
+        loss_val = loss.item() * grad_accum_steps
+        if not torch.isnan(loss).item():
+            total_loss += loss_val
+        progress_bar.set_postfix({'loss': loss_val})
 
     return total_loss / len(train_loader)
 
