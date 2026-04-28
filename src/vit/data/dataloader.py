@@ -13,29 +13,41 @@ def _dataset_class(config: Dict[str, Any]) -> Type[Dataset]:
     return EmotionDataset
 
 
+def _dataset_kwargs(config: Dict[str, Any]) -> Dict[str, Any]:
+    kwargs: Dict[str, Any] = {}
+    image_path_column = config['data'].get('image_path_column')
+    if image_path_column is not None:
+        kwargs['image_path_column'] = image_path_column
+    return kwargs
+
+
 def create_dataloaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, DataLoader]:
     train_transform = get_train_transforms(config)
     val_transform = get_val_transforms(config)
     test_transform = get_test_transforms(config)
 
     DatasetClass = _dataset_class(config)
+    extra = _dataset_kwargs(config)
 
     train_dataset = DatasetClass(
         csv_file=config['data']['train_csv'],
         img_dir=config['data']['train_img_dir'],
-        transform=train_transform
+        transform=train_transform,
+        **extra
     )
     
     val_dataset = DatasetClass(
         csv_file=config['data']['val_csv'],
         img_dir=config['data']['val_img_dir'],
-        transform=val_transform
+        transform=val_transform,
+        **extra
     )
     
     test_dataset = DatasetClass(
         csv_file=config['data']['test_csv'],
         img_dir=config['data']['test_img_dir'],
-        transform=test_transform
+        transform=test_transform,
+        **extra
     )
     
     batch_size = config['training']['batch_size']
@@ -71,10 +83,12 @@ def create_dataloaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, 
 
 def get_emotion_statistics(config: Dict[str, Any]) -> pd.DataFrame:
     DatasetClass = _dataset_class(config)
+    extra = _dataset_kwargs(config)
     train_dataset = DatasetClass(
         csv_file=config['data']['train_csv'],
         img_dir=config['data']['train_img_dir'],
-        transform=get_train_transforms(config)
+        transform=get_train_transforms(config),
+        **extra
     )
     
     return train_dataset.get_emotion_statistics()
@@ -82,23 +96,27 @@ def get_emotion_statistics(config: Dict[str, Any]) -> pd.DataFrame:
 
 def get_dataset_info(config: Dict[str, Any]) -> Dict[str, Any]:
     DatasetClass = _dataset_class(config)
+    extra = _dataset_kwargs(config)
 
     train_dataset = DatasetClass(
         csv_file=config['data']['train_csv'],
         img_dir=config['data']['train_img_dir'],
-        transform=get_train_transforms(config)
+        transform=get_train_transforms(config),
+        **extra
     )
     
     val_dataset = DatasetClass(
         csv_file=config['data']['val_csv'],
         img_dir=config['data']['val_img_dir'],
-        transform=get_val_transforms(config)
+        transform=get_val_transforms(config),
+        **extra
     )
     
     test_dataset = DatasetClass(
         csv_file=config['data']['test_csv'],
         img_dir=config['data']['test_img_dir'],
-        transform=get_test_transforms(config)
+        transform=get_test_transforms(config),
+        **extra
     )
     
     return {

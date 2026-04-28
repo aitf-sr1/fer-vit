@@ -15,10 +15,12 @@ class EmotionDataset(Dataset):
         csv_file: str,
         img_dir: str,
         transform: Callable,
+        image_path_column: str = "Image_Name",
     ):
         self.data = pd.read_csv(csv_file)
         self.img_dir = Path(img_dir)
         self.transform = transform
+        self.image_path_column = image_path_column
 
     def __len__(self) -> int:
         return len(self.data)
@@ -27,7 +29,7 @@ class EmotionDataset(Dataset):
         if torch.is_tensor(idx):
             idx = int(idx.item())
 
-        img_name = self.data.iloc[idx]["Image_Name"]
+        img_name = self.data.iloc[idx][self.image_path_column]
         img_path = self.img_dir / img_name
 
         image = Image.open(img_path).convert("RGB")
@@ -50,8 +52,10 @@ class EmotionDataset(Dataset):
 class BinaryEmotionDataset(Dataset):
     """Dataset for binary (0/1) per-emotion labels.
 
-    Expects a CSV with an ``image_file`` column and one column per emotion
+    Expects a CSV with an image path column and one column per emotion
     containing 0 or 1.  Images must live in ``img_dir``.
+    The image path column name defaults to ``image_file`` but can be
+    configured via ``image_path_column``.
     """
 
     EMOTION_COLUMNS = ["Boredom", "Engagement", "Confusion", "Frustration"]
@@ -61,10 +65,12 @@ class BinaryEmotionDataset(Dataset):
         csv_file: str,
         img_dir: str,
         transform: Callable,
+        image_path_column: str = "image_file",
     ):
         self.data = pd.read_csv(csv_file)
         self.img_dir = Path(img_dir)
         self.transform = transform
+        self.image_path_column = image_path_column
 
     def __len__(self) -> int:
         return len(self.data)
@@ -73,7 +79,7 @@ class BinaryEmotionDataset(Dataset):
         if torch.is_tensor(idx):
             idx = int(idx.item())
 
-        img_name = self.data.iloc[idx]["image_file"]
+        img_name = self.data.iloc[idx][self.image_path_column]
         img_path = self.img_dir / img_name
 
         image = Image.open(img_path).convert("RGB")
