@@ -1,11 +1,12 @@
 """
 Attention rollout for ViTEmotionModel (torchvision or FaRL/CLIP backbone).
+GradCAM for DaViT backbone (hierarchical, no CLS token).
 
-Rolls up attention weights across all 12 encoder layers following:
+Attention rollout rolls up attention weights across all 12 encoder layers following:
   Abnar & Zuidema (2020) "Quantifying Attention Flow in Transformers"
 
-The result is a 14x14 spatial relevance map for the [CLS] token,
-which can be upsampled and overlaid on the original image.
+GradCAM hooks the last DaViT stage output (C x H x W feature map before global pool)
+and weights it by the gradients from the target emotion head logit.
 """
 
 from pathlib import Path
@@ -172,6 +173,62 @@ class AttentionRollout:
         return attn_map
 
 
+class DaViTGradCAM:
+    """
+    GradCAM visualization for DaViT backbone.
+
+    Hooks the last stage output (B, C, H, W) — the spatial feature map before
+    global average pooling — and computes a class activation map per emotion head.
+    """
+
+    def __init__(self, model: nn.Module):
+        self.model = model
+        self._activations: Optional[torch.Tensor] = None
+
+    def _target_layer(self) -> nn.Module:
+        return self.model.davit.stages[-1]
+
+    def compute(self, image_tensor: torch.Tensor, emotion_idx: int) -> np.ndarray:
+        """
+        Args:
+            image_tensor: (1, C, H, W) on the same device as the model.
+            emotion_idx: which emotion head (0-3) to visualize.
+
+        Returns:
+            CAM as numpy array of shape (H_stage, W_stage), values in [0, 1].
+        """
+        self._activations = None
+        handle = None
+
+        def fwd_hook(module, input, output):
+            output.requires_grad_(True)
+            output.retain_grad()
+            self._activations = output
+
+        handle = self._target_layer().register_forward_hook(fwd_hook)
+
+        try:
+            self.model.zero_grad()
+            output = self.model(image_tensor)  # (1, num_emotions, num_classes)
+            pred_class = output[0, emotion_idx].argmax().item()
+            score = output[0, emotion_idx, pred_class]
+            score.backward()
+        finally:
+            handle.remove()
+
+        if self._activations is None or self._activations.grad is None:
+            raise RuntimeError("GradCAM failed to capture activations or gradients.")
+
+        acts = self._activations[0].detach()   # (C, H, W)
+        grads = self._activations.grad[0].detach()  # (C, H, W)
+
+        weights = grads.mean(dim=(1, 2))  # (C,)
+        cam = (acts * weights.unsqueeze(-1).unsqueeze(-1)).sum(dim=0)  # (H, W)
+        cam = torch.relu(cam).cpu().numpy()
+        cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
+        return cam
+
+
 def overlay_attention_on_image(
     original_image: Image.Image,
     attn_map: np.ndarray,
@@ -205,7 +262,10 @@ def save_attention_maps(
     discard_ratio: float = 0.9,
 ) -> None:
     """
-    Generates and saves attention rollout heatmaps for `num_samples` images.
+    Generates and saves attention/GradCAM heatmaps for `num_samples` images.
+
+    For DaViT backbone: generates one GradCAM map per emotion head per image.
+    For torchvision ViT / FaRL backbone: uses attention rollout (single map per image).
 
     Args:
         model: trained ViTEmotionModel.
@@ -214,56 +274,102 @@ def save_attention_maps(
         emotion_columns: list of emotion label names.
         output_dir: directory to save images.
         num_samples: how many samples to visualize.
-        discard_ratio: fraction of lowest attention weights to zero out.
+        discard_ratio: fraction of lowest attention weights to zero out (rollout only).
     """
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
-    rollout = AttentionRollout(model, discard_ratio=discard_ratio)
+    backbone_type = getattr(model, "backbone_type", "imagenet_vit")
     model.eval()
 
     indices = list(range(min(num_samples, len(dataset))))
+    print(f"Generating {len(indices)} attention maps...")
 
-    for idx in indices:
-        image_tensor, labels = dataset[idx]
-        image_tensor = image_tensor.unsqueeze(0).to(device)
+    if backbone_type == "davit":
+        gradcam = DaViTGradCAM(model)
 
-        attn_map = rollout(image_tensor)
+        for idx in indices:
+            image_tensor, labels = dataset[idx]
+            image_tensor = image_tensor.unsqueeze(0).to(device)
 
-        # Reconstruct original PIL image (undo normalization for display)
-        mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
-        std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
-        display_tensor = image_tensor.squeeze(0).cpu() * std + mean
-        display_tensor = display_tensor.clamp(0, 1)
-        original_pil = Image.fromarray((display_tensor.permute(1, 2, 0).numpy() * 255).astype(np.uint8))
+            mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+            std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
+            display_tensor = image_tensor.squeeze(0).cpu() * std + mean
+            display_tensor = display_tensor.clamp(0, 1)
+            original_pil = Image.fromarray(
+                (display_tensor.permute(1, 2, 0).numpy() * 255).astype(np.uint8)
+            )
 
-        overlay = overlay_attention_on_image(original_pil, attn_map)
+            num_emotions = len(emotion_columns)
+            ncols = 1 + num_emotions  # original + one cam per emotion
+            fig, axes = plt.subplots(1, ncols, figsize=(4 * ncols, 5))
 
-        # Build label string for title
-        preds = model(image_tensor).argmax(dim=2).squeeze(0).cpu().tolist()
-        true_labels = labels.tolist()
-        label_str = "  ".join(
-            f"{e}: pred={p} true={t}"
-            for e, p, t in zip(emotion_columns, preds, true_labels)
-        )
+            axes[0].imshow(original_pil)
+            axes[0].set_title("Original")
+            axes[0].axis("off")
 
-        fig, axes = plt.subplots(1, 3, figsize=(14, 5))
-        axes[0].imshow(original_pil)
-        axes[0].set_title("Original")
-        axes[0].axis("off")
+            with torch.no_grad():
+                preds = model(image_tensor).argmax(dim=2).squeeze(0).cpu().tolist()
+            true_labels = labels.tolist()
 
-        axes[1].imshow(attn_map, cmap="jet")
-        axes[1].set_title("Attention Map (14x14)")
-        axes[1].axis("off")
+            for emo_idx, emo_name in enumerate(emotion_columns):
+                cam = gradcam.compute(image_tensor, emo_idx)
+                overlay = overlay_attention_on_image(original_pil, cam)
+                pred = preds[emo_idx]
+                true = true_labels[emo_idx]
+                axes[emo_idx + 1].imshow(overlay)
+                axes[emo_idx + 1].set_title(f"{emo_name}\npred={pred} true={true}", fontsize=8)
+                axes[emo_idx + 1].axis("off")
 
-        axes[2].imshow(overlay)
-        axes[2].set_title("Overlay")
-        axes[2].axis("off")
+            plt.tight_layout()
+            save_file = out_path / f"gradcam_sample_{idx:04d}.png"
+            plt.savefig(save_file, dpi=120, bbox_inches="tight")
+            plt.close(fig)
 
-        fig.suptitle(label_str, fontsize=9)
-        plt.tight_layout()
-        save_file = out_path / f"attention_sample_{idx:04d}.png"
-        plt.savefig(save_file, dpi=120, bbox_inches="tight")
-        plt.close(fig)
+    else:
+        rollout = AttentionRollout(model, discard_ratio=discard_ratio)
 
-    print(f"Saved {len(indices)} attention maps to: {out_path}")
+        for idx in indices:
+            image_tensor, labels = dataset[idx]
+            image_tensor = image_tensor.unsqueeze(0).to(device)
+
+            attn_map = rollout(image_tensor)
+
+            mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+            std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
+            display_tensor = image_tensor.squeeze(0).cpu() * std + mean
+            display_tensor = display_tensor.clamp(0, 1)
+            original_pil = Image.fromarray(
+                (display_tensor.permute(1, 2, 0).numpy() * 255).astype(np.uint8)
+            )
+
+            overlay = overlay_attention_on_image(original_pil, attn_map)
+
+            with torch.no_grad():
+                preds = model(image_tensor).argmax(dim=2).squeeze(0).cpu().tolist()
+            true_labels = labels.tolist()
+            label_str = "  ".join(
+                f"{e}: pred={p} true={t}"
+                for e, p, t in zip(emotion_columns, preds, true_labels)
+            )
+
+            fig, axes = plt.subplots(1, 3, figsize=(14, 5))
+            axes[0].imshow(original_pil)
+            axes[0].set_title("Original")
+            axes[0].axis("off")
+
+            axes[1].imshow(attn_map, cmap="jet")
+            axes[1].set_title("Attention Map")
+            axes[1].axis("off")
+
+            axes[2].imshow(overlay)
+            axes[2].set_title("Overlay")
+            axes[2].axis("off")
+
+            fig.suptitle(label_str, fontsize=9)
+            plt.tight_layout()
+            save_file = out_path / f"attention_sample_{idx:04d}.png"
+            plt.savefig(save_file, dpi=120, bbox_inches="tight")
+            plt.close(fig)
+
+    print(f"Saved {len(indices)} maps to: {out_path}")
