@@ -11,6 +11,7 @@ and weights it by the gradients from the target emotion head logit.
 
 from pathlib import Path
 from typing import List, Optional
+import random
 import types
 
 import cv2
@@ -282,7 +283,7 @@ def save_attention_maps(
     backbone_type = getattr(model, "backbone_type", "imagenet_vit")
     model.eval()
 
-    indices = list(range(min(num_samples, len(dataset))))
+    indices = random.sample(range(len(dataset)), min(num_samples, len(dataset)))
     print(f"Generating {len(indices)} attention maps...")
 
     if backbone_type == "davit":
