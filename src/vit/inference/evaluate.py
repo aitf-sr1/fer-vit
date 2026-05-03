@@ -233,11 +233,13 @@ def evaluate(
         from ..data.transforms import get_test_transforms
         transform = get_test_transforms(config)
         dataset_cls = _dataset_class(config)
+        extra = _dataset_kwargs(config)
         data_cfg = config['data']
         test_dataset = dataset_cls(
             csv_file=data_cfg['test_csv'],
             img_dir=data_cfg['test_img_dir'],
             transform=transform,
+            **extra,
         )
         print(f"\nGenerating {attention_samples} attention maps...")
         save_attention_maps(
