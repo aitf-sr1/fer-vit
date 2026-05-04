@@ -48,11 +48,12 @@ fer-vit/
 
 ### Image Pipeline (`src/vit/`)
 
-The `ViTEmotionModel` accepts 224x224 RGB face images. It supports three backbone variants:
+The `ViTEmotionModel` accepts 224x224 RGB face images. It supports four backbone variants:
 
 - `imagenet_vit` — torchvision ViT-B/16 pretrained on ImageNet
 - `farl` — face-aware ViT-B/16 loaded from a FaRL CLIP checkpoint
 - `davit` — DaViT loaded via `timm`
+- `efficientvit` — EfficientViT-M2 loaded via `timm` (config key: `efficientvit_variant`, default `efficientvit_m2`). A hierarchical backbone with no CLS token; visualization uses GradCAM instead of attention rollout.
 
 The backbone's classification head is replaced with `N` independent linear heads (one per emotion). The backbone can be frozen initially and gradually unfrozen at a configured epoch.
 
@@ -96,7 +97,16 @@ The config is divided into sections:
 | `output` | Checkpoint and log output directories |
 | `device` | CUDA device selection |
 
-To use a different configuration, pass it via `--config`. Any pre-built configs (e.g. `farl_binary.yaml`, `davit_binary.yaml`) in `src/vit/config/` can be used as-is or as a starting point.
+To use a different configuration, pass it via `--config`. Any pre-built configs (e.g. `farl_binary.yaml`, `davit_binary.yaml`, `efficientvit_first_data.yaml`) in `src/vit/config/` can be used as-is or as a starting point.
+
+For EfficientViT-M2, set the following in the `model` section:
+
+```yaml
+model:
+  backbone: efficientvit
+  efficientvit_variant: efficientvit_m2  # any timm EfficientViT variant
+  pretrained: true
+```
 
 ---
 
