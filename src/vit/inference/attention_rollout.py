@@ -230,6 +230,62 @@ class DaViTGradCAM:
         return cam
 
 
+class EfficientViTGradCAM:
+    """
+    GradCAM visualization for EfficientViT backbone.
+
+    Hooks the last stage output (B, C, H, W) — the spatial feature map before
+    global average pooling — and computes a class activation map per emotion head.
+    """
+
+    def __init__(self, model: nn.Module):
+        self.model = model
+        self._activations: Optional[torch.Tensor] = None
+
+    def _target_layer(self) -> nn.Module:
+        return self.model.efficientvit.stages[-1]
+
+    def compute(self, image_tensor: torch.Tensor, emotion_idx: int) -> np.ndarray:
+        """
+        Args:
+            image_tensor: (1, C, H, W) on the same device as the model.
+            emotion_idx: which emotion head (0-3) to visualize.
+
+        Returns:
+            CAM as numpy array of shape (H_stage, W_stage), values in [0, 1].
+        """
+        self._activations = None
+        handle = None
+
+        def fwd_hook(module, input, output):
+            output.requires_grad_(True)
+            output.retain_grad()
+            self._activations = output
+
+        handle = self._target_layer().register_forward_hook(fwd_hook)
+
+        try:
+            self.model.zero_grad()
+            output = self.model(image_tensor)  # (1, num_emotions, num_classes)
+            pred_class = output[0, emotion_idx].argmax().item()
+            score = output[0, emotion_idx, pred_class]
+            score.backward()
+        finally:
+            handle.remove()
+
+        if self._activations is None or self._activations.grad is None:
+            raise RuntimeError("GradCAM failed to capture activations or gradients.")
+
+        acts = self._activations[0].detach()   # (C, H, W)
+        grads = self._activations.grad[0].detach()  # (C, H, W)
+
+        weights = grads.mean(dim=(1, 2))  # (C,)
+        cam = (acts * weights.unsqueeze(-1).unsqueeze(-1)).sum(dim=0)  # (H, W)
+        cam = torch.relu(cam).cpu().numpy()
+        cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
+        return cam
+
+
 def overlay_attention_on_image(
     original_image: Image.Image,
     attn_map: np.ndarray,
@@ -288,6 +344,47 @@ def save_attention_maps(
 
     if backbone_type == "davit":
         gradcam = DaViTGradCAM(model)
+
+        for idx in indices:
+            image_tensor, labels = dataset[idx]
+            image_tensor = image_tensor.unsqueeze(0).to(device)
+
+            mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+            std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
+            display_tensor = image_tensor.squeeze(0).cpu() * std + mean
+            display_tensor = display_tensor.clamp(0, 1)
+            original_pil = Image.fromarray(
+                (display_tensor.permute(1, 2, 0).numpy() * 255).astype(np.uint8)
+            )
+
+            num_emotions = len(emotion_columns)
+            ncols = 1 + num_emotions  # original + one cam per emotion
+            fig, axes = plt.subplots(1, ncols, figsize=(4 * ncols, 5))
+
+            axes[0].imshow(original_pil)
+            axes[0].set_title("Original")
+            axes[0].axis("off")
+
+            with torch.no_grad():
+                preds = model(image_tensor).argmax(dim=2).squeeze(0).cpu().tolist()
+            true_labels = labels.tolist()
+
+            for emo_idx, emo_name in enumerate(emotion_columns):
+                cam = gradcam.compute(image_tensor, emo_idx)
+                overlay = overlay_attention_on_image(original_pil, cam)
+                pred = preds[emo_idx]
+                true = true_labels[emo_idx]
+                axes[emo_idx + 1].imshow(overlay)
+                axes[emo_idx + 1].set_title(f"{emo_name}\npred={pred} true={true}", fontsize=8)
+                axes[emo_idx + 1].axis("off")
+
+            plt.tight_layout()
+            save_file = out_path / f"gradcam_sample_{idx:04d}.png"
+            plt.savefig(save_file, dpi=120, bbox_inches="tight")
+            plt.close(fig)
+
+    elif backbone_type == "efficientvit":
+        gradcam = EfficientViTGradCAM(model)
 
         for idx in indices:
             image_tensor, labels = dataset[idx]
