@@ -220,6 +220,20 @@ def _compute_pos_weights(train_csv: str, emotion_columns: List[str]) -> List[flo
     return pos_weights
 
 
+class ExactMatchWrapper(nn.Module):
+    def __init__(self, base_loss: nn.Module, exact_match_weight: float = 0.2):
+        super().__init__()
+        self.base_loss = base_loss
+        self.exact_match_weight = exact_match_weight
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        loss = self.base_loss(logits, targets)
+        preds = logits.argmax(dim=2)
+        exact = (preds == targets).all(dim=1).float()
+        exact_loss = 1.0 - exact.mean()
+        return loss + self.exact_match_weight * exact_loss
+
+
 EMOTION_COLUMNS = ["Boredom", "Engagement", "Confusion", "Frustration"]
 
 
@@ -237,7 +251,7 @@ def create_loss_function(config: dict) -> nn.Module:
             print("Computing class weights from training data...")
             raw_weights = _compute_class_weights(train_csv, EMOTION_COLUMNS, num_classes)
         print(f"Using Focal Loss (gamma={gamma})")
-        return MultiHeadFocalLoss(num_emotions, gamma=gamma, class_weights=raw_weights)
+        return _maybe_wrap_exact_match(MultiHeadFocalLoss(num_emotions, gamma=gamma, class_weights=raw_weights), loss_config)
 
     if loss_type == 'bce':
         pos_weights = loss_config.get('pos_weight', None)
@@ -246,14 +260,14 @@ def create_loss_function(config: dict) -> nn.Module:
             print("Computing positive class weights from training data...")
             pos_weights = _compute_pos_weights(train_csv, EMOTION_COLUMNS)
         print("Using BCE with Logits Loss")
-        return MultiHeadBCELoss(num_emotions, pos_weights=pos_weights)
+        return _maybe_wrap_exact_match(MultiHeadBCELoss(num_emotions, pos_weights=pos_weights), loss_config)
 
     if loss_type == 'asymmetric':
         gamma_pos = loss_config.get('gamma_pos', 0.0)
         gamma_neg = loss_config.get('gamma_neg', 4.0)
         clip = loss_config.get('clip', 0.05)
         print(f"Using Asymmetric Loss (gamma_pos={gamma_pos}, gamma_neg={gamma_neg}, clip={clip})")
-        return MultiHeadAsymmetricLoss(num_emotions, gamma_pos=gamma_pos, gamma_neg=gamma_neg, clip=clip)
+        return _maybe_wrap_exact_match(MultiHeadAsymmetricLoss(num_emotions, gamma_pos=gamma_pos, gamma_neg=gamma_neg, clip=clip), loss_config)
 
     # Default: cross_entropy
     label_smoothing = loss_config.get('label_smoothing', 0.0)
@@ -262,4 +276,13 @@ def create_loss_function(config: dict) -> nn.Module:
         train_csv = config['data']['train_csv']
         print("Computing class weights from training data...")
         raw_weights = _compute_class_weights(train_csv, EMOTION_COLUMNS, num_classes)
-    return MultiHeadCrossEntropyLoss(num_emotions, raw_weights, label_smoothing)
+    base = MultiHeadCrossEntropyLoss(num_emotions, raw_weights, label_smoothing)
+    return _maybe_wrap_exact_match(base, loss_config)
+
+
+def _maybe_wrap_exact_match(base: nn.Module, loss_config: dict) -> nn.Module:
+    weight = loss_config.get('exact_match_weight', 0.0)
+    if weight > 0.0:
+        print(f"Exact match auxiliary loss enabled (weight={weight})")
+        return ExactMatchWrapper(base, exact_match_weight=weight)
+    return base
