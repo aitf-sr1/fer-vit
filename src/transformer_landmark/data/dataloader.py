@@ -1,5 +1,4 @@
 from typing import Dict, Any, Tuple
-import pandas as pd
 from torch.utils.data import DataLoader
 
 from .datasets import LandmarkEmotionDataset
@@ -60,16 +59,6 @@ def create_dataloaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, 
     )
     
     return train_loader, val_loader, test_loader
-
-
-def get_emotion_statistics(config: Dict[str, Any]) -> pd.DataFrame:
-    train_dataset = LandmarkEmotionDataset(
-        csv_file=config['data']['train_csv'],
-        transform=get_train_transforms(config)
-    )
-    
-    return train_dataset.get_emotion_statistics()
-
 
 def get_dataset_info(config: Dict[str, Any]) -> Dict[str, Any]:
     train_dataset = LandmarkEmotionDataset(

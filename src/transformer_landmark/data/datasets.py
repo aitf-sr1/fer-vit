@@ -1,4 +1,4 @@
-from typing import Callable, cast, Optional
+from typing import Callable, Optional
 
 import pandas as pd
 import numpy as np
@@ -70,6 +70,3 @@ class LandmarkEmotionDataset(Dataset):
 
     def get_num_emotions(self) -> int:
         return len(self.EMOTION_COLUMNS)
-
-    def get_emotion_statistics(self) -> pd.DataFrame:
-        return cast(pd.DataFrame, self.data[self.EMOTION_COLUMNS].describe())

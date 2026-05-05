@@ -9,7 +9,6 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 
 from ..data.dataloader import create_dataloaders, get_dataset_info, _dataset_class, _dataset_kwargs
 from ..models.vit_model import create_model

@@ -1,14 +1,3 @@
-"""
-Attention rollout for ViTEmotionModel (torchvision or FaRL/CLIP backbone).
-GradCAM for DaViT backbone (hierarchical, no CLS token).
-
-Attention rollout rolls up attention weights across all 12 encoder layers following:
-  Abnar & Zuidema (2020) "Quantifying Attention Flow in Transformers"
-
-GradCAM hooks the last DaViT stage output (C x H x W feature map before global pool)
-and weights it by the gradients from the target emotion head logit.
-"""
-
 from pathlib import Path
 from typing import List, Optional
 import random
@@ -24,12 +13,6 @@ from PIL import Image
 
 class AttentionRollout:
     def __init__(self, model: nn.Module, discard_ratio: float = 0.7):
-        """
-        Args:
-            model: ViTEmotionModel instance.
-            discard_ratio: fraction of lowest attention weights to zero out
-                           before rollout, reducing noise.
-        """
         self.model = model
         self.discard_ratio = discard_ratio
         self._attention_weights: List[torch.Tensor] = []
@@ -40,10 +23,6 @@ class AttentionRollout:
     # ------------------------------------------------------------------
 
     def _patch_encoder_blocks(self):
-        """
-        Patch torchvision EncoderBlock.forward to capture attention weights.
-        torchvision hardcodes need_weights=False, so hooks alone cannot work.
-        """
         storage = self._attention_weights
 
         def _patched_forward(self_block, input: torch.Tensor) -> torch.Tensor:
@@ -73,10 +52,6 @@ class AttentionRollout:
     # ------------------------------------------------------------------
 
     def _patch_encoder_blocks_farl(self):
-        """
-        Patch open_clip ResidualAttentionBlock.forward to capture attention
-        weights. open_clip also hardcodes need_weights=False.
-        """
         storage = self._attention_weights
 
         def _patched_forward_clip(self_block, q_x, k_x=None, v_x=None, attn_mask=None):
@@ -85,15 +60,17 @@ class AttentionRollout:
             ln_q = self_block.ln_1(q_x)
             attn_mask_cast = attn_mask.to(q_x.dtype) if attn_mask is not None else None
             attn_out, attn_weights = self_block.attn(
-                ln_q, k_x, v_x,
+                ln_q,
+                k_x,
+                v_x,
                 need_weights=True,
                 average_attn_weights=True,
                 attn_mask=attn_mask_cast,
             )
             if attn_weights is not None:
                 storage.append(attn_weights.detach().cpu())
-            ls_1 = getattr(self_block, 'ls_1', nn.Identity())
-            ls_2 = getattr(self_block, 'ls_2', nn.Identity())
+            ls_1 = getattr(self_block, "ls_1", nn.Identity())
+            ls_2 = getattr(self_block, "ls_2", nn.Identity())
             x = q_x + ls_1(attn_out)
             x = x + ls_2(self_block.mlp(self_block.ln_2(x)))
             return x
@@ -124,9 +101,9 @@ class AttentionRollout:
         # Discard lowest attention values to reduce noise
         threshold = attentions.flatten(-2).quantile(self.discard_ratio, dim=-1)
         threshold = threshold.unsqueeze(-1).unsqueeze(-1)
-        attentions = torch.where(attentions >= threshold,
-                                 attentions,
-                                 torch.zeros_like(attentions))
+        attentions = torch.where(
+            attentions >= threshold, attentions, torch.zeros_like(attentions)
+        )
         attentions = attentions / (attentions.sum(dim=-1, keepdim=True) + 1e-8)
 
         # Multiply across layers
@@ -139,17 +116,10 @@ class AttentionRollout:
 
     @torch.no_grad()
     def __call__(self, image_tensor: torch.Tensor) -> np.ndarray:
-        """
-        Args:
-            image_tensor: (1, C, H, W) on the same device as the model.
-
-        Returns:
-            rollout map as numpy array of shape (14, 14), values in [0, 1].
-        """
         self._attention_weights.clear()
         self._original_forwards.clear()
 
-        is_farl = getattr(self.model, 'backbone_type', 'imagenet_vit') == 'farl'
+        is_farl = getattr(self.model, "backbone_type", "imagenet_vit") == "farl"
 
         if is_farl:
             self._patch_encoder_blocks_farl()
@@ -165,23 +135,20 @@ class AttentionRollout:
                 self._restore_encoder_blocks()
 
         if not self._attention_weights:
-            raise RuntimeError("No attention weights captured after patching encoder blocks.")
+            raise RuntimeError(
+                "No attention weights captured after patching encoder blocks."
+            )
 
         cls_attn = self._rollout()  # (1, 196)
         grid_size = int(cls_attn.shape[-1] ** 0.5)  # 14
         attn_map = cls_attn[0].reshape(grid_size, grid_size).numpy()
-        attn_map = (attn_map - attn_map.min()) / (attn_map.max() - attn_map.min() + 1e-8)
+        attn_map = (attn_map - attn_map.min()) / (
+            attn_map.max() - attn_map.min() + 1e-8
+        )
         return attn_map
 
 
 class DaViTGradCAM:
-    """
-    GradCAM visualization for DaViT backbone.
-
-    Hooks the last stage output (B, C, H, W) — the spatial feature map before
-    global average pooling — and computes a class activation map per emotion head.
-    """
-
     def __init__(self, model: nn.Module):
         self.model = model
         self._activations: Optional[torch.Tensor] = None
@@ -190,14 +157,6 @@ class DaViTGradCAM:
         return self.model.davit.stages[-1]
 
     def compute(self, image_tensor: torch.Tensor, emotion_idx: int) -> np.ndarray:
-        """
-        Args:
-            image_tensor: (1, C, H, W) on the same device as the model.
-            emotion_idx: which emotion head (0-3) to visualize.
-
-        Returns:
-            CAM as numpy array of shape (H_stage, W_stage), values in [0, 1].
-        """
         self._activations = None
         handle = None
 
@@ -220,7 +179,7 @@ class DaViTGradCAM:
         if self._activations is None or self._activations.grad is None:
             raise RuntimeError("GradCAM failed to capture activations or gradients.")
 
-        acts = self._activations[0].detach()   # (C, H, W)
+        acts = self._activations[0].detach()  # (C, H, W)
         grads = self._activations.grad[0].detach()  # (C, H, W)
 
         weights = grads.mean(dim=(1, 2))  # (C,)
@@ -231,13 +190,6 @@ class DaViTGradCAM:
 
 
 class EfficientViTGradCAM:
-    """
-    GradCAM visualization for EfficientViT backbone.
-
-    Hooks the last stage output (B, C, H, W) — the spatial feature map before
-    global average pooling — and computes a class activation map per emotion head.
-    """
-
     def __init__(self, model: nn.Module):
         self.model = model
         self._activations: Optional[torch.Tensor] = None
@@ -246,14 +198,6 @@ class EfficientViTGradCAM:
         return self.model.efficientvit.stages[-1]
 
     def compute(self, image_tensor: torch.Tensor, emotion_idx: int) -> np.ndarray:
-        """
-        Args:
-            image_tensor: (1, C, H, W) on the same device as the model.
-            emotion_idx: which emotion head (0-3) to visualize.
-
-        Returns:
-            CAM as numpy array of shape (H_stage, W_stage), values in [0, 1].
-        """
         self._activations = None
         handle = None
 
@@ -276,7 +220,7 @@ class EfficientViTGradCAM:
         if self._activations is None or self._activations.grad is None:
             raise RuntimeError("GradCAM failed to capture activations or gradients.")
 
-        acts = self._activations[0].detach()   # (C, H, W)
+        acts = self._activations[0].detach()  # (C, H, W)
         grads = self._activations.grad[0].detach()  # (C, H, W)
 
         weights = grads.mean(dim=(1, 2))  # (C,)
@@ -291,18 +235,11 @@ def overlay_attention_on_image(
     attn_map: np.ndarray,
     alpha: float = 0.5,
 ) -> np.ndarray:
-    """
-    Upsample attn_map to image size and overlay as a heatmap.
-
-    Returns an RGB numpy array (uint8).
-    """
     img_np = np.array(original_image.convert("RGB"))
     h, w = img_np.shape[:2]
 
     attn_resized = cv2.resize(attn_map, (w, h), interpolation=cv2.INTER_LINEAR)
-    heatmap = cv2.applyColorMap(
-        (attn_resized * 255).astype(np.uint8), cv2.COLORMAP_JET
-    )
+    heatmap = cv2.applyColorMap((attn_resized * 255).astype(np.uint8), cv2.COLORMAP_JET)
     heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
 
     overlay = (alpha * heatmap + (1 - alpha) * img_np).astype(np.uint8)
@@ -318,21 +255,6 @@ def save_attention_maps(
     num_samples: int = 16,
     discard_ratio: float = 0.9,
 ) -> None:
-    """
-    Generates and saves attention/GradCAM heatmaps for `num_samples` images.
-
-    For DaViT backbone: generates one GradCAM map per emotion head per image.
-    For torchvision ViT / FaRL backbone: uses attention rollout (single map per image).
-
-    Args:
-        model: trained ViTEmotionModel.
-        dataset: dataset instance (EmotionDataset or BinaryEmotionDataset).
-        device: torch device.
-        emotion_columns: list of emotion label names.
-        output_dir: directory to save images.
-        num_samples: how many samples to visualize.
-        discard_ratio: fraction of lowest attention weights to zero out (rollout only).
-    """
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
@@ -375,7 +297,9 @@ def save_attention_maps(
                 pred = preds[emo_idx]
                 true = true_labels[emo_idx]
                 axes[emo_idx + 1].imshow(overlay)
-                axes[emo_idx + 1].set_title(f"{emo_name}\npred={pred} true={true}", fontsize=8)
+                axes[emo_idx + 1].set_title(
+                    f"{emo_name}\npred={pred} true={true}", fontsize=8
+                )
                 axes[emo_idx + 1].axis("off")
 
             plt.tight_layout()
@@ -416,7 +340,9 @@ def save_attention_maps(
                 pred = preds[emo_idx]
                 true = true_labels[emo_idx]
                 axes[emo_idx + 1].imshow(overlay)
-                axes[emo_idx + 1].set_title(f"{emo_name}\npred={pred} true={true}", fontsize=8)
+                axes[emo_idx + 1].set_title(
+                    f"{emo_name}\npred={pred} true={true}", fontsize=8
+                )
                 axes[emo_idx + 1].axis("off")
 
             plt.tight_layout()

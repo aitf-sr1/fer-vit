@@ -144,11 +144,8 @@ def create_scheduler(optimizer: optim.Optimizer, config: Dict[str, Any]) -> Any:
 def calculate_metrics(
     predictions: torch.Tensor,
     targets: torch.Tensor,
-    mode: str = 'classification',
 ) -> Dict[str, Any]:
-    if mode == 'classification':
-        return _classification_metrics(predictions, targets)
-    return _regression_metrics(predictions, targets)
+    return _classification_metrics(predictions, targets)
 
 
 def _classification_metrics(logits: torch.Tensor, targets: torch.Tensor) -> Dict[str, Any]:
@@ -201,34 +198,6 @@ def _classification_metrics(logits: torch.Tensor, targets: torch.Tensor) -> Dict
         result['f1_per_emotion'] = f1_per_emotion
 
     return result
-
-
-def _regression_metrics(predictions: torch.Tensor, targets: torch.Tensor) -> Dict[str, Any]:
-    predictions_np = predictions.detach().cpu().numpy()
-    targets_np = targets.detach().cpu().numpy()
-
-    mse_per_emotion = np.mean((predictions_np - targets_np) ** 2, axis=0)
-    mae_per_emotion = np.mean(np.abs(predictions_np - targets_np), axis=0)
-    overall_mse = float(np.mean(mse_per_emotion))
-    overall_mae = float(np.mean(mae_per_emotion))
-    overall_rmse = float(np.sqrt(overall_mse))
-
-    correlations = []
-    for i in range(predictions_np.shape[1]):
-        if predictions_np[:, i].std() > 0 and targets_np[:, i].std() > 0:
-            corr = float(np.corrcoef(predictions_np[:, i], targets_np[:, i])[0, 1])
-        else:
-            corr = 0.0
-        correlations.append(corr)
-
-    return {
-        'mse': overall_mse,
-        'mae': overall_mae,
-        'rmse': overall_rmse,
-        'mse_per_emotion': mse_per_emotion.tolist(),
-        'mae_per_emotion': mae_per_emotion.tolist(),
-        'correlation_per_emotion': correlations,
-    }
 
 
 class EarlyStopping:

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Callable, cast
+from typing import Callable
 
 import pandas as pd
 import torch
@@ -45,19 +45,8 @@ class EmotionDataset(Dataset):
     def get_num_emotions(self) -> int:
         return len(self.EMOTION_COLUMNS)
 
-    def get_emotion_statistics(self) -> pd.DataFrame:
-        return cast(pd.DataFrame, self.data[self.EMOTION_COLUMNS].describe())
-
 
 class BinaryEmotionDataset(Dataset):
-    """Dataset for binary (0/1) per-emotion labels.
-
-    Expects a CSV with an image path column and one column per emotion
-    containing 0 or 1.  Images must live in ``img_dir``.
-    The image path column name defaults to ``image_file`` but can be
-    configured via ``image_path_column``.
-    """
-
     EMOTION_COLUMNS = ["Boredom", "Engagement", "Confusion", "Frustration"]
 
     def __init__(
@@ -94,6 +83,3 @@ class BinaryEmotionDataset(Dataset):
 
     def get_num_emotions(self) -> int:
         return len(self.EMOTION_COLUMNS)
-
-    def get_emotion_statistics(self) -> pd.DataFrame:
-        return cast(pd.DataFrame, self.data[self.EMOTION_COLUMNS].describe())
