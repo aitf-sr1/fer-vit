@@ -156,6 +156,17 @@ def calculate_regression_metrics(
     return metrics
 
 
+def _cohen_kappa(preds: np.ndarray, targets: np.ndarray) -> float:
+    p_o = float((preds == targets).mean())
+    n_classes = max(preds.max(), targets.max()) + 1
+    p_e = sum(
+        (preds == c).mean() * (targets == c).mean() for c in range(n_classes)
+    )
+    if p_e >= 1.0:
+        return 1.0
+    return (p_o - p_e) / (1.0 - p_e)
+
+
 def calculate_classification_metrics(
     logits: torch.Tensor, targets: torch.Tensor
 ) -> Dict[str, Any]:
@@ -166,12 +177,27 @@ def calculate_classification_metrics(
     targets_np = targets.detach().cpu().numpy()
 
     accuracy_per_emotion = []
+    kappa_per_emotion = []
+    per_class_accuracy = []
+
     for i in range(num_emotions):
         acc = (preds_np[:, i] == targets_np[:, i]).mean()
         accuracy_per_emotion.append(float(acc))
 
-    overall_accuracy = float(np.mean(accuracy_per_emotion))
+        kappa_per_emotion.append(_cohen_kappa(preds_np[:, i], targets_np[:, i]))
 
+        classes = np.unique(targets_np[:, i])
+        cls_acc = []
+        n_classes = int(logits.shape[2])
+        for c in range(n_classes):
+            mask = targets_np[:, i] == c
+            if mask.sum() == 0:
+                cls_acc.append(float('nan'))
+            else:
+                cls_acc.append(float((preds_np[:, i][mask] == c).mean()))
+        per_class_accuracy.append(cls_acc)
+
+    overall_accuracy = float(np.mean(accuracy_per_emotion))
     exact_match = (preds_np == targets_np).all(axis=1).mean()
 
     mae_per_emotion = []
@@ -186,6 +212,8 @@ def calculate_classification_metrics(
         "mae": overall_mae,
         "accuracy_per_emotion": accuracy_per_emotion,
         "mae_per_emotion": mae_per_emotion,
+        "kappa_per_emotion": kappa_per_emotion,
+        "per_class_accuracy": per_class_accuracy,
     }
 
     return metrics

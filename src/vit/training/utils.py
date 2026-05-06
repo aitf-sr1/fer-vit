@@ -148,6 +148,20 @@ def calculate_metrics(
     return _classification_metrics(predictions, targets)
 
 
+def _cohen_kappa(preds: np.ndarray, targets: np.ndarray) -> float:
+    n = len(preds)
+    if n == 0:
+        return 0.0
+    num_classes = int(max(preds.max(), targets.max())) + 1
+    p_o = float((preds == targets).mean())
+    pred_freq = np.bincount(preds.astype(int), minlength=num_classes) / n
+    true_freq = np.bincount(targets.astype(int), minlength=num_classes) / n
+    p_e = float(np.dot(pred_freq, true_freq))
+    if p_e >= 1.0:
+        return 1.0
+    return (p_o - p_e) / (1.0 - p_e)
+
+
 def _classification_metrics(logits: torch.Tensor, targets: torch.Tensor) -> Dict[str, Any]:
     # logits: (batch, num_emotions, num_classes), targets: (batch, num_emotions) long
     num_classes = logits.shape[2]
@@ -167,12 +181,30 @@ def _classification_metrics(logits: torch.Tensor, targets: torch.Tensor) -> Dict
     overall_mae = float(np.mean(mae_per_emotion))
     exact_match = float((preds_np == targets_np).all(axis=1).mean())
 
+    kappa_per_emotion = [
+        _cohen_kappa(preds_np[:, i], targets_np[:, i])
+        for i in range(num_emotions)
+    ]
+
+    per_class_accuracy = []
+    for i in range(num_emotions):
+        class_accs = []
+        for c in range(num_classes):
+            mask = targets_np[:, i] == c
+            if mask.sum() > 0:
+                class_accs.append(float((preds_np[mask, i] == c).mean()))
+            else:
+                class_accs.append(float('nan'))
+        per_class_accuracy.append(class_accs)
+
     result: Dict[str, Any] = {
         'accuracy': overall_accuracy,
         'exact_match': exact_match,
         'mae': overall_mae,
         'accuracy_per_emotion': accuracy_per_emotion,
         'mae_per_emotion': mae_per_emotion,
+        'kappa_per_emotion': kappa_per_emotion,
+        'per_class_accuracy': per_class_accuracy,
     }
 
     if num_classes == 2:

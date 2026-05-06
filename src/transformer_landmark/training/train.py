@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import wandb
@@ -93,7 +94,18 @@ def validate(
     all_predictions_tensor = torch.cat(all_predictions, dim=0)
     all_targets_tensor = torch.cat(all_targets, dim=0)
     metrics = calculate_metrics(all_predictions_tensor, all_targets_tensor, mode=mode)
-    
+
+    if mode == "classification":
+        num_emotions = all_predictions_tensor.shape[1]
+        per_emotion_losses: dict[str, float] = {}
+        for i in range(num_emotions):
+            per_emotion_losses[f"emotion_{i}"] = float(
+                F.cross_entropy(all_predictions_tensor[:, i, :], all_targets_tensor[:, i])
+            )
+        metrics['per_emotion_losses'] = per_emotion_losses
+        metrics['all_preds'] = all_predictions_tensor.argmax(dim=-1).cpu().numpy()
+        metrics['all_targets'] = all_targets_tensor.cpu().numpy()
+
     return avg_loss, metrics
 
 
@@ -197,9 +209,32 @@ def train(config: Dict[str, Any]) -> None:
         if model_mode == "classification":
             metrics_to_log['val/accuracy'] = val_metrics['accuracy']
             metrics_to_log['val/exact_match'] = val_metrics['exact_match']
-            for i, emotion in enumerate(dataset_info['emotion_columns']):
+            emotions = dataset_info['emotion_columns']
+            class_names_per_emotion = config['data']['class_names']
+            all_preds = val_metrics['all_preds']
+            all_targets_np = val_metrics['all_targets']
+            for i, emotion in enumerate(emotions):
                 metrics_to_log[f'val/acc_{emotion}'] = val_metrics['accuracy_per_emotion'][i]
                 metrics_to_log[f'val/mae_{emotion}'] = val_metrics['mae_per_emotion'][i]
+                metrics_to_log[f'val/kappa_{emotion}'] = val_metrics['kappa_per_emotion'][i]
+                metrics_to_log[f'val/loss_{emotion}'] = val_metrics['per_emotion_losses'][f'emotion_{i}']
+
+                per_class = val_metrics['per_class_accuracy'][i]
+                for cls_idx, cls_acc in enumerate(per_class):
+                    cls_name = class_names_per_emotion[i][cls_idx]
+                    metrics_to_log[f'val/cls_acc_{emotion}_{cls_name}'] = cls_acc
+
+                preds_i = all_preds[:, i].tolist()
+                targets_i = all_targets_np[:, i].tolist()
+                cls_names = class_names_per_emotion[i]
+                metrics_to_log[f'val/confusion_matrix_{emotion}'] = wandb.plot.confusion_matrix(
+                    y_true=targets_i, preds=preds_i, class_names=cls_names
+                )
+                metrics_to_log[f'val/pred_dist_{emotion}'] = wandb.Histogram(preds_i)
+
+            if device.type == 'cuda':
+                metrics_to_log['gpu/memory_allocated_mb'] = torch.cuda.memory_allocated(device) / 1e6
+                metrics_to_log['gpu/memory_reserved_mb'] = torch.cuda.memory_reserved(device) / 1e6
         else:
             metrics_to_log['val/mse'] = val_metrics['mse']
             metrics_to_log['val/rmse'] = val_metrics['rmse']
