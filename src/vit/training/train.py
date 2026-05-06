@@ -186,7 +186,7 @@ def _log_prediction_table(
     wandb.log({'val/prediction_samples': table})
 
 
-
+def train(config: Dict[str, Any]) -> None:
     load_dotenv()
 
     wandb_config = {
