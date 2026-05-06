@@ -75,3 +75,5 @@ output:
 device:
   use_cuda: true
   cuda_device: 0
+wandb:
+  prediction_table_freq: 5

@@ -154,7 +154,13 @@ def _log_prediction_table(
     norm_cfg = config['augmentation']['imagenet_norm']
     mean = torch.tensor(norm_cfg['mean'], device=device).view(3, 1, 1)
     std = torch.tensor(norm_cfg['std'], device=device).view(3, 1, 1)
-    class_names_per_emotion = config['data']['class_names']
+    
+    num_classes = config['model']['num_classes']
+    num_emotions = config['model']['num_emotions']
+    class_names_per_emotion = [
+        [f'class_{c}' for c in range(num_classes)]
+        for _ in range(num_emotions)
+    ]
 
     columns = ['image'] + [f'true_{e}' for e in emotion_columns] + [f'pred_{e}' for e in emotion_columns]
     table = wandb.Table(columns=columns)
@@ -321,7 +327,12 @@ def train(config: Dict[str, Any]) -> None:
             metrics_to_log['gpu/memory_reserved_mb'] = torch.cuda.memory_reserved(device) / 1e6
 
         emotions = dataset_info['emotion_columns']
-        class_names_per_emotion = config['data']['class_names']
+        num_classes = config['model']['num_classes']
+        num_emotions = config['model']['num_emotions']
+        class_names_per_emotion = [
+            [f'class_{c}' for c in range(num_classes)]
+            for _ in range(num_emotions)
+        ]
         all_preds = val_metrics['all_preds']      # (N, num_emotions)
         all_targets = val_metrics['all_targets']  # (N, num_emotions)
 

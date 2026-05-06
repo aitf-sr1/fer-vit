@@ -210,7 +210,11 @@ def train(config: Dict[str, Any]) -> None:
             metrics_to_log['val/accuracy'] = val_metrics['accuracy']
             metrics_to_log['val/exact_match'] = val_metrics['exact_match']
             emotions = dataset_info['emotion_columns']
-            class_names_per_emotion = config['data']['class_names']
+            num_classes = config['model']['num_classes']
+            class_names_per_emotion = [
+                [f'class_{c}' for c in range(num_classes)]
+                for _ in range(len(emotions))
+            ]
             all_preds = val_metrics['all_preds']
             all_targets_np = val_metrics['all_targets']
             for i, emotion in enumerate(emotions):
