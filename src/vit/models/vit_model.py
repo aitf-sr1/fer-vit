@@ -18,6 +18,8 @@ class ViTEmotionModel(nn.Module):
             in_features = self._build_davit_backbone(config)
         elif self.backbone_type == 'efficientvit':
             in_features = self._build_efficientvit_backbone(config)
+        elif self.backbone_type == 'dinov3':
+            in_features = self._build_dinov3_backbone(config)
         else:
             in_features = self._build_imagenet_backbone(config)
 
@@ -71,6 +73,25 @@ class ViTEmotionModel(nn.Module):
         print(f"DaViT backbone: {model_name}, pretrained={pretrained}")
         return self.davit.num_features
 
+    def _build_dinov3_backbone(self, config: Dict[str, Any]) -> int:
+        import timm
+
+        variant = config['model'].get('dinov3_variant', 'vit_small_patch16_dinov3')
+        dinov3_checkpoint = config['model'].get('dinov3_checkpoint', None)
+        self.dinov3 = timm.create_model(variant, pretrained=False, num_classes=0)
+
+        if dinov3_checkpoint is not None:
+            state = torch.load(dinov3_checkpoint, map_location='cpu', weights_only=False)
+            state_dict = state.get('model', state.get('state_dict', state))
+            missing, unexpected = self.dinov3.load_state_dict(state_dict, strict=False)
+            print(f"DINOv3 weights loaded from {dinov3_checkpoint}")
+            print(f"  Missing keys:    {len(missing)}")
+            print(f"  Unexpected keys: {len(unexpected)}")
+        else:
+            print("WARNING: dinov3_checkpoint not set. DINOv3 backbone initialised randomly.")
+
+        return self.dinov3.num_features
+
     def _build_efficientvit_backbone(self, config: Dict[str, Any]) -> int:
         import timm
 
@@ -90,6 +111,9 @@ class ViTEmotionModel(nn.Module):
         elif self.backbone_type == 'efficientvit':
             for param in self.efficientvit.parameters():
                 param.requires_grad = False
+        elif self.backbone_type == 'dinov3':
+            for param in self.dinov3.parameters():
+                param.requires_grad = False
         else:
             for param in self.vit.conv_proj.parameters():
                 param.requires_grad = False
@@ -108,6 +132,9 @@ class ViTEmotionModel(nn.Module):
         elif self.backbone_type == 'efficientvit':
             for param in self.efficientvit.parameters():
                 param.requires_grad = True
+        elif self.backbone_type == 'dinov3':
+            for param in self.dinov3.parameters():
+                param.requires_grad = True
         else:
             for param in self.vit.parameters():
                 param.requires_grad = True
@@ -119,6 +146,8 @@ class ViTEmotionModel(nn.Module):
             features = self.davit(x)             # (batch, 1024)
         elif self.backbone_type == 'efficientvit':
             features = self.efficientvit(x)      # (batch, num_features)
+        elif self.backbone_type == 'dinov3':
+            features = self.dinov3(x)            # (batch, 384)
         else:
             features = self.vit(x)               # (batch, 768)
 
