@@ -85,6 +85,56 @@ class AttentionRollout:
         self._original_forwards.clear()
 
     # ------------------------------------------------------------------
+    # DINOv3 (timm EvaAttention) patching
+    # ------------------------------------------------------------------
+
+    def _patch_encoder_blocks_dinov3(self):
+        storage = self._attention_weights
+
+        def _patched_attn_forward(self_attn, x, rope=None, attn_mask=None, is_causal=False):
+            from timm.models.eva import apply_rot_embed_cat
+            B, N, C = x.shape
+
+            if self_attn.qkv is not None:
+                qkv = self_attn.qkv(x).reshape(B, N, 3, self_attn.num_heads, -1).permute(2, 0, 3, 1, 4)
+                q, k, v = qkv.unbind(0)
+            else:
+                q = self_attn.q_proj(x).reshape(B, N, self_attn.num_heads, -1).transpose(1, 2)
+                k = self_attn.k_proj(x).reshape(B, N, self_attn.num_heads, -1).transpose(1, 2)
+                v = self_attn.v_proj(x).reshape(B, N, self_attn.num_heads, -1).transpose(1, 2)
+
+            q, k = self_attn.q_norm(q), self_attn.k_norm(k)
+
+            if rope is not None:
+                npt = self_attn.num_prefix_tokens
+                q = torch.cat(
+                    [q[:, :, :npt, :], apply_rot_embed_cat(q[:, :, npt:, :], rope, half=self_attn.rotate_half)],
+                    dim=2,
+                ).type_as(v)
+                k = torch.cat(
+                    [k[:, :, :npt, :], apply_rot_embed_cat(k[:, :, npt:, :], rope, half=self_attn.rotate_half)],
+                    dim=2,
+                ).type_as(v)
+
+            attn = (q * self_attn.scale) @ k.transpose(-2, -1)
+            attn = attn.softmax(dim=-1)
+            storage.append(attn.mean(dim=1).detach().cpu())
+            attn = self_attn.attn_drop(attn)
+            x_out = (attn @ v).transpose(1, 2).reshape(B, N, C)
+            x_out = self_attn.norm(x_out)
+            x_out = self_attn.proj(x_out)
+            return self_attn.proj_drop(x_out)
+
+        for i, block in enumerate(self.model.dinov3.blocks):
+            self._original_forwards[i] = block.attn.forward
+            block.attn.forward = types.MethodType(_patched_attn_forward, block.attn)
+
+    def _restore_encoder_blocks_dinov3(self):
+        for i, block in enumerate(self.model.dinov3.blocks):
+            block.attn.forward = self._original_forwards[i]
+        self._original_forwards.clear()
+
+    # ------------------------------------------------------------------
     # Rollout computation
     # ------------------------------------------------------------------
 
@@ -111,26 +161,35 @@ class AttentionRollout:
         for i in range(1, attentions.shape[0]):
             result = torch.bmm(attentions[i], result)
 
-        # CLS token's attention to patch tokens (exclude CLS-to-CLS at index 0)
-        return result[:, 0, 1:]
+        # CLS token's attention to patch tokens, skipping all prefix tokens
+        backbone_type = getattr(self.model, 'backbone_type', 'imagenet_vit')
+        if backbone_type == 'dinov3':
+            npt = self.model.dinov3.blocks[0].attn.num_prefix_tokens
+        else:
+            npt = 1
+        return result[:, 0, npt:]
 
     @torch.no_grad()
     def __call__(self, image_tensor: torch.Tensor) -> np.ndarray:
         self._attention_weights.clear()
         self._original_forwards.clear()
 
-        is_farl = getattr(self.model, "backbone_type", "imagenet_vit") == "farl"
+        backbone_type = getattr(self.model, "backbone_type", "imagenet_vit")
 
-        if is_farl:
+        if backbone_type == "farl":
             self._patch_encoder_blocks_farl()
+        elif backbone_type == "dinov3":
+            self._patch_encoder_blocks_dinov3()
         else:
             self._patch_encoder_blocks()
 
         try:
             _ = self.model(image_tensor)
         finally:
-            if is_farl:
+            if backbone_type == "farl":
                 self._restore_encoder_blocks_farl()
+            elif backbone_type == "dinov3":
+                self._restore_encoder_blocks_dinov3()
             else:
                 self._restore_encoder_blocks()
 
@@ -139,8 +198,8 @@ class AttentionRollout:
                 "No attention weights captured after patching encoder blocks."
             )
 
-        cls_attn = self._rollout()  # (1, 196)
-        grid_size = int(cls_attn.shape[-1] ** 0.5)  # 14
+        cls_attn = self._rollout()
+        grid_size = int(cls_attn.shape[-1] ** 0.5)
         attn_map = cls_attn[0].reshape(grid_size, grid_size).numpy()
         attn_map = (attn_map - attn_map.min()) / (
             attn_map.max() - attn_map.min() + 1e-8
