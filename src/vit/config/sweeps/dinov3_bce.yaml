@@ -2,7 +2,7 @@ model:
   name: dinov3_vits16
   backbone: dinov3
   dinov3_variant: vit_small_patch16_dinov3
-  dinov3_checkpoint: model/dinov3_vits16.pt
+  dinov3_checkpoint: model/dinov3_vits16.pth
   freeze_backbone: true
   num_emotions: 4
   num_classes: 2
