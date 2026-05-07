@@ -48,18 +48,19 @@ augmentation:
     std: [0.229, 0.224, 0.225]
 
 training:
-  batch_size: 32
+  batch_size: 128
+  mixed_precision: true
   num_epochs: 50
-  num_workers: 4
+  num_workers: 12
   pin_memory: true
-  learning_rate: 0.00001
+  learning_rate: 0.001
   weight_decay: 0.0001
   gradient_clip: 1.0
 
 loss:
   type: cross_entropy
   class_weights: auto
-  label_smoothing: 0.1
+  label_smoothing: 0.0
 
 optimizer:
   type: adam
