@@ -64,78 +64,14 @@ training:
   num_epochs: 100
   num_workers: 4
   pin_memory: true
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-  learning_rate: 0.00001
-=======
   learning_rate: 0.001
->>>>>>> Stashed changes
-=======
-  learning_rate: 0.001
->>>>>>> Stashed changes
-=======
-  learning_rate: 0.001
->>>>>>> Stashed changes
-=======
-  learning_rate: 0.001
->>>>>>> Stashed changes
-=======
-  learning_rate: 0.001
->>>>>>> Stashed changes
-=======
-  learning_rate: 0.001
->>>>>>> Stashed changes
-=======
-  learning_rate: 0.001
->>>>>>> Stashed changes
-=======
-  learning_rate: 0.001
->>>>>>> Stashed changes
   weight_decay: 0.0001
   gradient_clip: 1.0
 
 loss:
   type: cross_entropy
   class_weights: auto
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-  label_smoothing: 0.1
-=======
   label_smoothing: 0.0
->>>>>>> Stashed changes
-=======
-  label_smoothing: 0.0
->>>>>>> Stashed changes
-=======
-  label_smoothing: 0.0
->>>>>>> Stashed changes
-=======
-  label_smoothing: 0.0
->>>>>>> Stashed changes
-=======
-  label_smoothing: 0.0
->>>>>>> Stashed changes
-=======
-  label_smoothing: 0.0
->>>>>>> Stashed changes
-=======
-  label_smoothing: 0.0
->>>>>>> Stashed changes
-=======
-  label_smoothing: 0.0
->>>>>>> Stashed changes
   exact_match_weight: 0.2
 
 optimizer:
