@@ -48,12 +48,13 @@ fer-vit/
 
 ### Image Pipeline (`src/vit/`)
 
-The `ViTEmotionModel` accepts 224x224 RGB face images. It supports four backbone variants:
+The `ViTEmotionModel` accepts 224x224 RGB face images. It supports five backbone variants:
 
 - `imagenet_vit` — torchvision ViT-B/16 pretrained on ImageNet
 - `farl` — face-aware ViT-B/16 loaded from a FaRL CLIP checkpoint
 - `davit` — DaViT loaded via `timm`
 - `efficientvit` — EfficientViT-M2 loaded via `timm` (config key: `efficientvit_variant`, default `efficientvit_m2`). A hierarchical backbone with no CLS token; visualization uses GradCAM instead of attention rollout.
+- `dinov3` — DINOv3 ViT-S/16 loaded via `timm` from a local checkpoint (config keys: `dinov3_variant`, default `vit_small_patch16_dinov3`; `dinov3_checkpoint`, path to a `.pt` file). Pretrained self-supervised on LVD-142M web data. Uses `EvaBlock` attention with rotary position embeddings and 5 prefix tokens (1 CLS + 4 register tokens); attention rollout automatically skips the register tokens to produce a correct 14×14 spatial map.
 
 The backbone's classification head is replaced with `N` independent linear heads (one per emotion). The backbone can be frozen initially and gradually unfrozen at a configured epoch.
 
@@ -107,6 +108,17 @@ model:
   efficientvit_variant: efficientvit_m2  # any timm EfficientViT variant
   pretrained: true
 ```
+
+For DINOv3 ViT-S/16, set the following in the `model` section:
+
+```yaml
+model:
+  backbone: dinov3
+  dinov3_variant: vit_small_patch16_dinov3  # any timm DINOv3 variant
+  dinov3_checkpoint: model/dinov3_vits16.pt  # path to local .pt checkpoint
+```
+
+Pre-built DINOv3 configs live at `src/vit/config/dinov3_base.yaml` and `src/vit/config/sweeps/dinov3_*.yaml`.
 
 ---
 
