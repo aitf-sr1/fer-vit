@@ -60,7 +60,7 @@ augmentation:
     std: [0.229, 0.224, 0.225]
 
 training:
-  batch_size: 64
+  batch_size: 16
   mixed_precision: true
   num_epochs: 100
   num_workers: 16
