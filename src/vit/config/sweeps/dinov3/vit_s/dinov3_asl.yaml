@@ -86,7 +86,7 @@ scheduler:
   min_lr: 1.0e-07
 
 early_stopping:
-  patience: 5
+  patience: 10
   min_delta: 0.0001
 
 output:

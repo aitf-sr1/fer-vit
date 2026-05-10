@@ -84,7 +84,7 @@ scheduler:
   pct_start: 0.3
 
 early_stopping:
-  patience: 5
+  patience: 10
   min_delta: 0.0001
 
 output:
