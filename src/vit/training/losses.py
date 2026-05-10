@@ -210,11 +210,15 @@ class MultiHeadHammingLoss(nn.Module):
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         # logits: (batch, num_emotions, num_classes)
         # targets: (batch, num_emotions) as torch.long
-        # Hamming loss: fraction of incorrectly predicted emotion labels
-        preds = logits.argmax(dim=2)  # (batch, num_emotions)
-        incorrect = (preds != targets).float()  # (batch, num_emotions)
-        hamming_loss = incorrect.mean()  # Average across all predictions
-        return hamming_loss
+        # Soft Hamming: 1 - p(correct_class) per emotion head, averaged.
+        # Differentiable via softmax; approximates Hamming distance:
+        # ~0 when confident and correct, ~1 when wrong.
+        total_loss = torch.tensor(0.0, device=logits.device)
+        for i in range(self.num_emotions):
+            probs = torch.softmax(logits[:, i, :], dim=-1)  # (batch, num_classes)
+            correct_prob = probs.gather(1, targets[:, i].unsqueeze(1)).squeeze(1)  # (batch,)
+            total_loss = total_loss + (1.0 - correct_prob).mean()
+        return total_loss / self.num_emotions
 
 
 class ExactMatchWrapper(nn.Module):
