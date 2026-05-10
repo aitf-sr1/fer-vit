@@ -78,12 +78,38 @@ Both pipelines share the same loss, optimizer, scheduler, and metric infrastruct
 
 ## Configuration
 
-All training behaviour is controlled by YAML config files. The default configs are:
+All training behaviour is controlled by YAML config files organized in pipeline-specific directories:
 
-- `src/vit/config/base_config.yaml` — image pipeline
-- `src/transformer_landmark/config/base_config.yaml` — landmark pipeline
+### Image Pipeline (ViT)
 
-The config is divided into sections:
+See [src/vit/config/README.md](src/vit/config/README.md) for detailed structure and usage examples.
+
+- **Base configs** — Reference configurations for different backbones (ImageNet ViT-B/16, DINOv3, etc.)
+- **Backbone-specific configs** — Experiments with DaViT, FaRL, EfficientViT on different datasets
+- **Dataset configs** — Dataset variants (binary classification, first_data, etc.)
+- **Sweep configs** — Loss function ablations (ce_weighted, focal, asl, bce) organized by backbone
+
+Quick example:
+```bash
+python scripts/train_vit.py --config src/vit/config/base/base_config.yaml
+python scripts/train_vit.py --config src/vit/config/backbones/davit/binary.yaml
+python scripts/train_sweep.py --configs src/vit/config/sweeps/dinov3/vit_b/*.yaml
+```
+
+### Landmark Pipeline (Graph Transformer)
+
+See [src/transformer_landmark/config/README.md](src/transformer_landmark/config/README.md) for detailed structure and usage examples.
+
+- **Base config** — Reference configuration for the landmark pipeline
+
+Example:
+```bash
+python scripts/train_landmark.py --config src/transformer_landmark/config/base_config.yaml
+```
+
+### Config Sections
+
+Both pipelines use the same configuration structure:
 
 | Section | Description |
 |---|---|
@@ -97,28 +123,6 @@ The config is divided into sections:
 | `early_stopping` | Patience and minimum delta |
 | `output` | Checkpoint and log output directories |
 | `device` | CUDA device selection |
-
-To use a different configuration, pass it via `--config`. Any pre-built configs (e.g. `farl_binary.yaml`, `davit_binary.yaml`, `efficientvit_first_data.yaml`) in `src/vit/config/` can be used as-is or as a starting point.
-
-For EfficientViT-M2, set the following in the `model` section:
-
-```yaml
-model:
-  backbone: efficientvit
-  efficientvit_variant: efficientvit_m2  # any timm EfficientViT variant
-  pretrained: true
-```
-
-For DINOv3 ViT-S/16, set the following in the `model` section:
-
-```yaml
-model:
-  backbone: dinov3
-  dinov3_variant: vit_small_patch16_dinov3  # any timm DINOv3 variant
-  dinov3_checkpoint: model/dinov3_vits16.pt  # path to local .pt checkpoint
-```
-
-Pre-built DINOv3 configs live at `src/vit/config/dinov3_base.yaml` and `src/vit/config/sweeps/dinov3_*.yaml`.
 
 ---
 
