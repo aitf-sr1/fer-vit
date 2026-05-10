@@ -232,7 +232,7 @@ def train(config: Dict[str, Any]) -> None:
                 targets_i = all_targets_np[:, i].tolist()
                 cls_names = class_names_per_emotion[i]
                 metrics_to_log[f'val/confusion_matrix_{emotion}'] = wandb.plot.confusion_matrix(
-                    y_true=targets_i, preds=preds_i, class_names=cls_names
+                    y_true=targets_i, preds=preds_i, class_names=cls_names, title=f'{emotion} Confusion Matrix'
                 )
                 metrics_to_log[f'val/pred_dist_{emotion}'] = wandb.Histogram(preds_i)
 
