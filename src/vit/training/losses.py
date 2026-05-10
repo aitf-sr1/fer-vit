@@ -202,6 +202,21 @@ def _compute_pos_weights(train_csv: str, emotion_columns: List[str]) -> List[flo
     return pos_weights
 
 
+class MultiHeadHammingLoss(nn.Module):
+    def __init__(self, num_emotions: int = 4):
+        super().__init__()
+        self.num_emotions = num_emotions
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        # logits: (batch, num_emotions, num_classes)
+        # targets: (batch, num_emotions) as torch.long
+        # Hamming loss: fraction of incorrectly predicted emotion labels
+        preds = logits.argmax(dim=2)  # (batch, num_emotions)
+        incorrect = (preds != targets).float()  # (batch, num_emotions)
+        hamming_loss = incorrect.mean()  # Average across all predictions
+        return hamming_loss
+
+
 class ExactMatchWrapper(nn.Module):
     def __init__(self, base_loss: nn.Module, exact_match_weight: float = 0.2):
         super().__init__()
@@ -224,6 +239,10 @@ def create_loss_function(config: dict) -> nn.Module:
     loss_type = loss_config.get("type", "cross_entropy").lower()
     num_emotions = config["model"]["num_emotions"]
     num_classes = config["model"].get("num_classes", 4)
+
+    if loss_type == "hamming":
+        print("Using Hamming Loss")
+        return MultiHeadHammingLoss(num_emotions)
 
     if loss_type == "focal":
         gamma = loss_config.get("gamma", 2.0)
