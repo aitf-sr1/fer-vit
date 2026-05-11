@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import os
 from datetime import datetime
 from dotenv import load_dotenv
@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 import wandb
 
-from ..data.dataloader import create_dataloaders, get_dataset_info
+from ..data.dataloader import create_dataloaders, get_dataset_info, _MULTIMODAL_TYPES
 from ..models.vit_model import create_model
 from .losses import create_loss_function
 from .utils import (
@@ -22,6 +22,20 @@ from .utils import (
     calculate_metrics,
     EarlyStopping
 )
+
+
+def _is_multimodal(config: Dict[str, Any]) -> bool:
+    return config['data'].get('dataset_type', 'standard') in _MULTIMODAL_TYPES
+
+
+def _unpack_batch(
+    batch: tuple, device: torch.device, is_multimodal: bool
+) -> tuple[torch.Tensor, Optional[torch.Tensor], torch.Tensor]:
+    if is_multimodal:
+        images, aux, labels = batch
+        return images.to(device), aux.to(device), labels.to(device)
+    images, labels = batch
+    return images.to(device), None, labels.to(device)
 
 
 def train_one_epoch(
@@ -41,14 +55,14 @@ def train_one_epoch(
     is_one_cycle = config['scheduler']['type'].lower() == 'one_cycle'
     use_amp = scaler is not None
     grad_accum_steps = config['training'].get('gradient_accumulation_steps', 1)
+    multimodal = _is_multimodal(config)
 
     progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1} [Train]")
-    for step, (images, labels) in enumerate(progress_bar):
-        images = images.to(device)
-        labels = labels.to(device)
+    for step, batch in enumerate(progress_bar):
+        images, aux, labels = _unpack_batch(batch, device, multimodal)
 
         with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=use_amp):
-            outputs = model(images)
+            outputs = model(images, aux=aux)
             loss = criterion(outputs, labels)
             loss = loss / grad_accum_steps
 
@@ -97,21 +111,22 @@ def validate(
     criterion: nn.Module,
     device: torch.device,
     epoch: int,
+    config: Dict[str, Any],
     use_amp: bool = False,
 ) -> tuple[float, Dict[str, Any]]:
     model.eval()
     total_loss = 0.0
     all_predictions = []
     all_targets = []
+    multimodal = _is_multimodal(config)
 
     with torch.no_grad():
         progress_bar = tqdm(val_loader, desc=f"Epoch {epoch+1} [Val]")
-        for images, labels in progress_bar:
-            images = images.to(device)
-            labels = labels.to(device)
+        for batch in progress_bar:
+            images, aux, labels = _unpack_batch(batch, device, multimodal)
 
             with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=use_amp):
-                outputs = model(images)
+                outputs = model(images, aux=aux)
                 loss = criterion(outputs, labels)
 
             total_loss += loss.item()
@@ -125,7 +140,6 @@ def validate(
     all_targets_tensor = torch.cat(all_targets, dim=0)
     metrics = calculate_metrics(all_predictions_tensor, all_targets_tensor)
 
-    # Per-emotion CE loss: outputs shape (N, num_emotions, num_classes)
     num_emotions = all_predictions_tensor.shape[1]
     per_emotion_losses: dict[str, float] = {}
     for i in range(num_emotions):
@@ -134,10 +148,7 @@ def validate(
         )
     metrics['per_emotion_losses'] = per_emotion_losses
 
-    # Raw preds/targets as numpy for confusion matrix and distribution logging
-    metrics['all_preds'] = (
-        all_predictions_tensor.argmax(dim=-1).cpu().numpy()
-    )  # shape (N, num_emotions)
+    metrics['all_preds'] = all_predictions_tensor.argmax(dim=-1).cpu().numpy()
     metrics['all_targets'] = all_targets_tensor.cpu().numpy()
 
     return avg_loss, metrics
@@ -167,12 +178,12 @@ def _log_prediction_table(
 
     model.eval()
     collected = 0
+    multimodal = _is_multimodal(config)
     with torch.no_grad():
-        for images, labels in val_loader:
-            images = images.to(device)
-            labels = labels.to(device)
-            outputs = model(images)
-            preds = outputs.argmax(dim=-1)  # (B, num_emotions)
+        for batch in val_loader:
+            images, aux, labels = _unpack_batch(batch, device, multimodal)
+            outputs = model(images, aux=aux)
+            preds = outputs.argmax(dim=-1)
 
             for b in range(images.shape[0]):
                 if collected >= n_samples:
@@ -301,7 +312,7 @@ def train(config: Dict[str, Any]) -> None:
             model, train_loader, criterion, optimizer, device, epoch, config, scheduler, scaler
         )
         val_loss, val_metrics = validate(
-            model, val_loader, criterion, device, epoch, use_amp
+            model, val_loader, criterion, device, epoch, config, use_amp
         )
 
         unfreeze_epoch = config['model']['gradual_unfreeze'].get('unfreeze_at_epoch', -1)
