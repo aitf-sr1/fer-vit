@@ -10,9 +10,10 @@ from tqdm import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
 
-from ..data.dataloader import create_dataloaders, get_dataset_info, _dataset_class, _dataset_kwargs
+from ..data.dataloader import create_dataloaders, get_dataset_info, _dataset_class, _dataset_kwargs, _aux_csv_for_split
 from ..models.vit_model import create_model
 from ..training.utils import load_checkpoint, calculate_metrics
+from ..training.train import _is_multimodal, _unpack_batch
 from .attention_rollout import save_attention_maps
 
 
@@ -28,18 +29,19 @@ def evaluate_model(
     test_loader: DataLoader,
     device: torch.device,
     emotion_columns: list[str],
+    config: Dict[str, Any],
 ) -> Dict[str, Any]:
     model.eval()
     all_predictions = []
     all_targets = []
+    multimodal = _is_multimodal(config)
 
     with torch.no_grad():
         progress_bar = tqdm(test_loader, desc="Evaluating")
-        for images, labels in progress_bar:
-            images = images.to(device)
-            labels = labels.to(device)
+        for batch in progress_bar:
+            images, aux, labels = _unpack_batch(batch, device, multimodal)
 
-            outputs = model(images)
+            outputs = model(images, aux=aux)
             all_predictions.append(outputs.cpu())
             all_targets.append(labels.cpu())
 
@@ -220,7 +222,7 @@ def evaluate(
     model = model.to(device)
     print(f"Model loaded from: {checkpoint_path}")
 
-    results = evaluate_model(model, test_loader, device, dataset_info['emotion_columns'])
+    results = evaluate_model(model, test_loader, device, dataset_info['emotion_columns'], config)
     
     print_results(results)
     
@@ -239,6 +241,7 @@ def evaluate(
             img_dir=data_cfg['test_img_dir'],
             transform=transform,
             **extra,
+            **_aux_csv_for_split(config, 'test'),
         )
         print(f"\nGenerating {attention_samples} attention maps...")
         save_attention_maps(
