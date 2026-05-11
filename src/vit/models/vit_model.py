@@ -1,7 +1,9 @@
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import torch
 import torch.nn as nn
 from torchvision.models import vit_b_16, ViT_B_16_Weights
+
+from .auxiliary_encoder import build_auxiliary_encoder
 
 
 class ViTEmotionModel(nn.Module):
@@ -23,8 +25,13 @@ class ViTEmotionModel(nn.Module):
         else:
             in_features = self._build_imagenet_backbone(config)
 
+        self.auxiliary_encoder = build_auxiliary_encoder(config)
+        head_in_features = in_features + (
+            self.auxiliary_encoder.output_dim if self.auxiliary_encoder is not None else 0
+        )
+
         self.emotion_heads = nn.ModuleList([
-            nn.Linear(in_features, self.num_classes)
+            nn.Linear(head_in_features, self.num_classes)
             for _ in range(self.num_emotions)
         ])
 
@@ -62,7 +69,7 @@ class ViTEmotionModel(nn.Module):
             print("WARNING: farl_checkpoint not set. FaRL backbone initialised randomly.")
 
         self.farl_visual = clip_model.visual
-        return clip_model.visual.output_dim  # 512 for ViT-B/16
+        return clip_model.visual.output_dim
 
     def _build_davit_backbone(self, config: Dict[str, Any]) -> int:
         import timm
@@ -139,22 +146,26 @@ class ViTEmotionModel(nn.Module):
             for param in self.vit.parameters():
                 param.requires_grad = True
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, aux: Optional[torch.Tensor] = None) -> torch.Tensor:
         if self.backbone_type == 'farl':
-            features = self.farl_visual(x)       # (batch, 512)
+            features = self.farl_visual(x)
         elif self.backbone_type == 'davit':
-            features = self.davit(x)             # (batch, 1024)
+            features = self.davit(x)
         elif self.backbone_type == 'efficientvit':
-            features = self.efficientvit(x)      # (batch, num_features)
+            features = self.efficientvit(x)
         elif self.backbone_type == 'dinov3':
-            features = self.dinov3(x)            # (batch, 384)
+            features = self.dinov3(x)
         else:
-            features = self.vit(x)               # (batch, 768)
+            features = self.vit(x)
+
+        if self.auxiliary_encoder is not None and aux is not None:
+            aux_features = self.auxiliary_encoder(aux)
+            features = torch.cat([features, aux_features], dim=1)
 
         logits = torch.stack(
             [head(features) for head in self.emotion_heads], dim=1
         )
-        return logits  # (batch, num_emotions, num_classes)
+        return logits
 
     def get_num_trainable_params(self) -> int:
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
