@@ -28,7 +28,6 @@ data:
   val_img_dir: "data/daisee_binary/Validation"
   test_img_dir: "data/daisee_binary/Test"
   image_size: 224
-  normalize_emotions: false
 
 augmentation:
   train:
@@ -87,7 +86,6 @@ early_stopping:
 
 output:
   checkpoint_dir: outputs/checkpoints/farl/asl
-  log_dir: outputs/logs/farl/asl
   save_best_only: true
   save_frequency: 5
 

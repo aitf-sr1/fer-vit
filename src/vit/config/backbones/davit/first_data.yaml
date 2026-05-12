@@ -28,7 +28,6 @@ data:
   val_img_dir: "data/first_data"
   test_img_dir: "data/first_data"
   image_size: 224
-  normalize_emotions: false
 
 augmentation:
   train:
@@ -86,7 +85,6 @@ early_stopping:
 
 output:
   checkpoint_dir: outputs/checkpoints/davit/first_data
-  log_dir: outputs/logs/davit/first_data
   save_best_only: true
   save_frequency: 5
 

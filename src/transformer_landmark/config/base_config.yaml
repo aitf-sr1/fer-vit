@@ -17,7 +17,6 @@ data:
   val_img_dir: data/Validation
   test_img_dir: data/Test
   image_size: 224
-  normalize_emotions: false
 
 augmentation:
   train:
@@ -68,7 +67,6 @@ early_stopping:
 
 output:
   checkpoint_dir: outputs/checkpoints_landmark
-  log_dir: outputs/logs_landmark
   save_best_only: true
   save_frequency: 5
 

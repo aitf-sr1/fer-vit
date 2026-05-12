@@ -28,7 +28,6 @@ data:
   val_aux_csv: data/landmarks/val_landmarks.csv
   test_aux_csv: data/landmarks/test_landmarks.csv
   image_size: 224
-  normalize_emotions: false
 
 augmentation:
   train:
@@ -85,7 +84,6 @@ early_stopping:
 
 output:
   checkpoint_dir: outputs/checkpoints/multimodal_landmark
-  log_dir: outputs/logs/multimodal_landmark
   save_best_only: true
   save_frequency: 5
 

@@ -46,7 +46,6 @@ data:
     - AU26_r
     - AU45_r
   image_size: 224
-  normalize_emotions: false
 
 augmentation:
   train:
@@ -103,7 +102,6 @@ early_stopping:
 
 output:
   checkpoint_dir: outputs/checkpoints/multimodal_au
-  log_dir: outputs/logs/multimodal_au
   save_best_only: true
   save_frequency: 5
 
