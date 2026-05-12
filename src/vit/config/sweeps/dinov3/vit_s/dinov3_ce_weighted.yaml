@@ -23,7 +23,7 @@ tags:
 
 data:
   image_path_column: frame_path
-  dataset_type: standard
+  dataset_type: binary
   train_csv: "data/first_data/train.csv"
   val_csv: "data/first_data/val.csv"
   test_csv: "data/first_data/test.csv"
