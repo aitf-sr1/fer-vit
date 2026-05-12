@@ -24,7 +24,7 @@ tags:
   - loss-ablation
 
 data:
-  dataset_type: standard
+  dataset_type: binary
   train_csv: "data/daisee_binary/Cleaned_TrainLabels.csv"
   val_csv: "data/daisee_binary/Cleaned_ValidationLabels.csv"
   test_csv: "data/daisee_binary/Cleaned_TestLabels.csv"
