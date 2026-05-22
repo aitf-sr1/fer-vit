@@ -124,6 +124,7 @@ def export(
         dynamic_axes=dynamic_axes,
         opset_version=opset,
         do_constant_folding=True,
+        dynamo=False,
     )
 
     print(f"Saved: {output_path}")
