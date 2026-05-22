@@ -143,8 +143,8 @@ if __name__ == '__main__':
                         help='Input image size (default: 224)')
     parser.add_argument('--batch-size', type=int, default=1,
                         help='Batch size for dummy input; use 1 for dynamic batching (default: 1)')
-    parser.add_argument('--opset', type=int, default=17,
-                        help='ONNX opset version (default: 17)')
+    parser.add_argument('--opset', type=int, default=18,
+                        help='ONNX opset version (default: 18)')
     parser.add_argument('--fp16', action='store_true',
                         help='Export in FP16 precision (requires FP16-capable runtime)')
     args = parser.parse_args()
