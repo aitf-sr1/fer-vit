@@ -110,7 +110,7 @@ def create_dataloaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, 
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=num_workers,
+        num_workers=config['training'].get('val_num_workers', num_workers),
         pin_memory=pin_memory
     )
 
@@ -118,7 +118,7 @@ def create_dataloaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, 
         test_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=num_workers,
+        num_workers=config['training'].get('test_num_workers', num_workers),
         pin_memory=pin_memory
     )
 
