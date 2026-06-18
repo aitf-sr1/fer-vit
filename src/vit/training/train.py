@@ -250,7 +250,7 @@ def train(config: Dict[str, Any]) -> None:
     optimizer = create_optimizer(model, config)
 
     use_amp = config['training'].get('mixed_precision', False) and device.type == 'cuda'
-    scaler = torch.amp.GradScaler() if use_amp else None
+    scaler = torch.amp.GradScaler(init_scale=4096) if use_amp else None
     if use_amp:
         print("Mixed precision (float16) enabled")
 

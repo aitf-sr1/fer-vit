@@ -111,9 +111,11 @@ class MultiHeadBCELoss(nn.Module):
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         # Use the difference of class-1 and class-0 logits as the binary score.
+        # Clamp logits to avoid float16 inf propagating through AMP backward.
+        logits = logits.float().clamp(min=-50, max=50)
         total_loss = torch.tensor(0.0, device=logits.device)
         for i in range(self.num_emotions):
-            score = (logits[:, i, 1] - logits[:, i, 0]).clamp(min=-50, max=50)
+            score = logits[:, i, 1] - logits[:, i, 0]
             pos_weight = (
                 self.pos_weights[i].to(logits.device)
                 if self.pos_weights is not None
@@ -145,11 +147,12 @@ class MultiHeadAsymmetricLoss(nn.Module):
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         # Force float32: log/sigmoid are numerically unstable in float16 (AMP),
         # where clamp(min=1e-8) is effectively 0 and log(0) = -inf → NaN.
-        logits = logits.float()
+        # Also clamp logits to prevent float16 inf from producing inf-inf = NaN.
+        logits = logits.float().clamp(min=-50, max=50)
 
         total_loss = torch.tensor(0.0, device=logits.device)
         for i in range(self.num_emotions):
-            score = (logits[:, i, 1] - logits[:, i, 0]).clamp(min=-50, max=50)
+            score = logits[:, i, 1] - logits[:, i, 0]
             prob = torch.sigmoid(score)
             t = targets[:, i].float()
 
