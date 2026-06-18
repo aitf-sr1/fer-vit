@@ -1,8 +1,9 @@
 from io import BytesIO
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 import pandas as pd
+import pyarrow.parquet as pq
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
@@ -17,21 +18,29 @@ class ParquetEmotionDataset(Dataset):
         transform: Callable,
         filter_synthetic: bool = False,
     ):
-        self.data = pd.read_parquet(parquet_path, engine="pyarrow")
+        self.parquet_path = str(parquet_path)
         self.transform = transform
-        self.parquet_path = Path(parquet_path)
+        self.filter_synthetic = filter_synthetic
 
-        if filter_synthetic and "synthetic" in self.data.columns:
-            self.data = self.data[self.data["synthetic"] == 0].reset_index(drop=True)
+        pf = pq.ParquetFile(self.parquet_path)
+        self._length = pf.metadata.num_rows
+
+        self._data: Optional[pd.DataFrame] = None
 
     def __len__(self) -> int:
-        return len(self.data)
+        return self._length
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         if torch.is_tensor(idx):
             idx = int(idx.item())
 
-        row = self.data.iloc[idx]
+        if self._data is None:
+            df = pd.read_parquet(self.parquet_path, engine="pyarrow")
+            if self.filter_synthetic and "synthetic" in df.columns:
+                df = df[df["synthetic"] == 0].reset_index(drop=True)
+            self._data = df
+
+        row = self._data.iloc[idx]
         img_bytes = row["image"]["bytes"]
         image = Image.open(BytesIO(img_bytes)).convert("RGB")
 

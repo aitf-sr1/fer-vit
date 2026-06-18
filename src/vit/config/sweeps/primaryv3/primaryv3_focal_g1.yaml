@@ -56,7 +56,7 @@ training:
   batch_size: 64
   mixed_precision: true
   num_epochs: 50
-  num_workers: 16
+  num_workers: 8
   pin_memory: true
   learning_rate: 0.00001
   weight_decay: 0.0001
