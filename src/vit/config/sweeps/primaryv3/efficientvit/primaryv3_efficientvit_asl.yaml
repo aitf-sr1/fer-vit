@@ -1,0 +1,95 @@
+model:
+  name: efficientvit_m2
+  backbone: efficientvit
+  efficientvit_variant: efficientvit_m2
+  pretrained: true
+  freeze_backbone: false
+  num_emotions: 4
+  num_classes: 2
+  gradual_unfreeze:
+    enabled: false
+
+experiment_name: "primaryv3-efficientvit-asl"
+tags:
+  - primaryv3
+  - efficientvit
+  - binary
+  - asymmetric
+  - asl
+  - sweep-01
+  - loss-ablation
+
+data:
+  dataset_type: parquet
+  train_parquet: "data/ub-sr-01-srma22-fer-dataset-cleaned-based-on-paper/data/train.parquet"
+  val_parquet: "data/ub-sr-01-srma22-fer-dataset-cleaned-based-on-paper/data/validation.parquet"
+  test_parquet: "data/ub-sr-01-srma22-fer-dataset-cleaned-based-on-paper/data/test.parquet"
+  filter_synthetic: false
+  image_size: 224
+
+augmentation:
+  train:
+    random_horizontal_flip: true
+    flip_prob: 0.5
+    color_jitter: true
+    brightness: 0.2
+    contrast: 0.2
+    saturation: 0.2
+    hue: 0.1
+    random_rotation: true
+    rotation_degrees: 15
+    random_affine: true
+    affine_degrees: 10
+    affine_scale: [0.9, 1.1]
+    random_perspective: true
+    perspective_distortion: 0.2
+    random_erasing: true
+    erasing_prob: 0.3
+    random_grayscale: true
+    grayscale_prob: 0.1
+  imagenet_norm:
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]
+
+training:
+  batch_size: 32
+  num_epochs: 50
+  num_workers: 4
+  pin_memory: true
+  learning_rate: 0.00001
+  weight_decay: 0.0001
+  gradient_clip: 1.0
+
+loss:
+  type: asymmetric
+  gamma_pos: 0
+  gamma_neg: 4
+  clip: 0.05
+
+optimizer:
+  type: adam
+  betas: [0.9, 0.999]
+  eps: 1.0e-08
+
+scheduler:
+  type: reduce_on_plateau
+  mode: min
+  factor: 0.5
+  patience: 5
+  min_lr: 1.0e-07
+
+early_stopping:
+  patience: 10
+  min_delta: 0.0001
+
+output:
+  checkpoint_dir: outputs/checkpoints/primaryv3/efficientvit/asl
+  save_best_only: true
+  save_frequency: 5
+
+device:
+  use_cuda: true
+  cuda_device: 0
+
+wandb:
+  prediction_table_freq: 5
