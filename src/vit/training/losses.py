@@ -173,10 +173,23 @@ class MultiHeadAsymmetricLoss(nn.Module):
         return total_loss / self.num_emotions
 
 
+def _load_labels_df(path: str):
+    if path.endswith('.parquet'):
+        return pd.read_parquet(path, engine='pyarrow')
+    return pd.read_csv(path)
+
+
+def _resolve_train_path(config: dict) -> str:
+    dataset_type = config.get('data', {}).get('dataset_type', 'standard')
+    if dataset_type == 'parquet':
+        return config['data']['train_parquet']
+    return config['data']['train_csv']
+
+
 def _compute_class_weights(
-    train_csv: str, emotion_columns: List[str], num_classes: int
+    train_path: str, emotion_columns: List[str], num_classes: int
 ) -> List[List[float]]:
-    df = pd.read_csv(train_csv)
+    df = _load_labels_df(train_path)
     n = len(df)
     weights = []
     for col in emotion_columns:
@@ -190,8 +203,8 @@ def _compute_class_weights(
     return weights
 
 
-def _compute_pos_weights(train_csv: str, emotion_columns: List[str]) -> List[float]:
-    df = pd.read_csv(train_csv)
+def _compute_pos_weights(train_path: str, emotion_columns: List[str]) -> List[float]:
+    df = _load_labels_df(train_path)
     pos_weights = []
     for col in emotion_columns:
         neg = (df[col] == 0).sum()
@@ -252,10 +265,10 @@ def create_loss_function(config: dict) -> nn.Module:
         gamma = loss_config.get("gamma", 2.0)
         raw_weights = loss_config.get("class_weights", None)
         if raw_weights == "auto":
-            train_csv = config["data"]["train_csv"]
+            train_path = _resolve_train_path(config)
             print("Computing class weights from training data...")
             raw_weights = _compute_class_weights(
-                train_csv, EMOTION_COLUMNS, num_classes
+                train_path, EMOTION_COLUMNS, num_classes
             )
         print(f"Using Focal Loss (gamma={gamma})")
         return _maybe_wrap_exact_match(
@@ -266,9 +279,9 @@ def create_loss_function(config: dict) -> nn.Module:
     if loss_type == "bce":
         pos_weights = loss_config.get("pos_weight", None)
         if pos_weights == "auto":
-            train_csv = config["data"]["train_csv"]
+            train_path = _resolve_train_path(config)
             print("Computing positive class weights from training data...")
-            pos_weights = _compute_pos_weights(train_csv, EMOTION_COLUMNS)
+            pos_weights = _compute_pos_weights(train_path, EMOTION_COLUMNS)
         print("Using BCE with Logits Loss")
         return _maybe_wrap_exact_match(
             MultiHeadBCELoss(num_emotions, pos_weights=pos_weights), loss_config
@@ -292,9 +305,9 @@ def create_loss_function(config: dict) -> nn.Module:
     label_smoothing = loss_config.get("label_smoothing", 0.0)
     raw_weights = loss_config.get("class_weights", None)
     if raw_weights == "auto":
-        train_csv = config["data"]["train_csv"]
+        train_path = _resolve_train_path(config)
         print("Computing class weights from training data...")
-        raw_weights = _compute_class_weights(train_csv, EMOTION_COLUMNS, num_classes)
+        raw_weights = _compute_class_weights(train_path, EMOTION_COLUMNS, num_classes)
     base = MultiHeadCrossEntropyLoss(num_emotions, raw_weights, label_smoothing)
     return _maybe_wrap_exact_match(base, loss_config)
 
