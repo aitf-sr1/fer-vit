@@ -113,7 +113,7 @@ class MultiHeadBCELoss(nn.Module):
         # Use the difference of class-1 and class-0 logits as the binary score.
         total_loss = torch.tensor(0.0, device=logits.device)
         for i in range(self.num_emotions):
-            score = logits[:, i, 1] - logits[:, i, 0]
+            score = (logits[:, i, 1] - logits[:, i, 0]).clamp(min=-50, max=50)
             pos_weight = (
                 self.pos_weights[i].to(logits.device)
                 if self.pos_weights is not None
@@ -149,7 +149,7 @@ class MultiHeadAsymmetricLoss(nn.Module):
 
         total_loss = torch.tensor(0.0, device=logits.device)
         for i in range(self.num_emotions):
-            score = logits[:, i, 1] - logits[:, i, 0]
+            score = (logits[:, i, 1] - logits[:, i, 0]).clamp(min=-50, max=50)
             prob = torch.sigmoid(score)
             t = targets[:, i].float()
 
