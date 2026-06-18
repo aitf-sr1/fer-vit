@@ -12,9 +12,9 @@ model:
     reduce_lr_on_unfreeze: true
     lr_reduction_factor: 0.1
 
-experiment_name: "ub-sr01-focal-gamma2"
+experiment_name: "primaryv3-focal-gamma1"
 tags:
-  - ub-sr01
+  - primaryv3
   - binary
   - focal
   - sweep-01
@@ -64,7 +64,7 @@ training:
 
 loss:
   type: focal
-  gamma: 2.0
+  gamma: 1.0
   class_weights: auto
 
 optimizer:
@@ -84,7 +84,7 @@ early_stopping:
   min_delta: 0.0001
 
 output:
-  checkpoint_dir: outputs/checkpoints/ub_sr01/focal_g2
+  checkpoint_dir: outputs/checkpoints/primaryv3/focal_g1
   save_best_only: true
   save_frequency: 5
 

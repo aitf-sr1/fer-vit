@@ -12,11 +12,11 @@ model:
     reduce_lr_on_unfreeze: true
     lr_reduction_factor: 0.1
 
-experiment_name: "ub-sr01-bce-auto-posweight"
+experiment_name: "primaryv3-ce-weighted"
 tags:
-  - ub-sr01
+  - primaryv3
   - binary
-  - bce
+  - cross-entropy
   - sweep-01
   - loss-ablation
 
@@ -63,8 +63,8 @@ training:
   gradient_clip: 1.0
 
 loss:
-  type: bce
-  pos_weight: auto
+  type: cross_entropy
+  class_weights: auto
 
 optimizer:
   type: adam
@@ -83,7 +83,7 @@ early_stopping:
   min_delta: 0.0001
 
 output:
-  checkpoint_dir: outputs/checkpoints/ub_sr01/bce
+  checkpoint_dir: outputs/checkpoints/primaryv3/ce_weighted
   save_best_only: true
   save_frequency: 5
 
